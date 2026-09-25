@@ -25,6 +25,13 @@ DOC_DIR = os.path.join(BASE_DIR, 'docs')
 for directory in [FEED_DIR, CHAT_DIR, VIDEO_DIR, DOC_DIR]:
     os.makedirs(directory, exist_ok=True)
 
+@app.after_request
+def add_cors_headers(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    return response
+
 @app.route('/')
 def index():
     return f"""
@@ -202,6 +209,37 @@ def serve_media(folder, filename):
         target_dir = VIDEO_DIR
     elif folder == 'docs':
         target_dir = DOC_DIR
+    else:
+        target_dir = CHAT_DIR
+        
+    return send_from_directory(target_dir, filename)
+
+@app.route('/v1/storage/objects/<folder>/<filename>', methods=['PUT', 'OPTIONS'])
+def rest_upload(folder, filename):
+    if request.method == 'OPTIONS':
+        return '', 204
+        
+    if folder == 'avatars' or folder == 'banners':
+        target_dir = DOC_DIR
+    elif folder == 'stickers':
+        target_dir = FEED_DIR 
+    else:
+        target_dir = CHAT_DIR
+        
+    filename = secure_filename(filename)
+    file_path = os.path.join(target_dir, filename)
+    
+    with open(file_path, 'wb') as f:
+        f.write(request.data)
+        
+    return jsonify({"success": True, "url": f"/v1/storage/objects/{folder}/{filename}"}), 200
+
+@app.route('/v1/storage/objects/<folder>/<filename>', methods=['GET'])
+def rest_serve(folder, filename):
+    if folder == 'avatars' or folder == 'banners':
+        target_dir = DOC_DIR
+    elif folder == 'stickers':
+        target_dir = FEED_DIR 
     else:
         target_dir = CHAT_DIR
         
