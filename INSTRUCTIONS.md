@@ -41,21 +41,25 @@ npm start
 ```
 The server will now run on port 3000 (`http://localhost:3000`).
 
-## Step 5: Expose the Server to the Internet via Cloudflare Tunnels
-Open a **new session** in Termux (swipe from the left edge of the screen and tap "New session").
-Run Cloudflare Tunnels to securely expose the local port 3000 to the internet for free:
+## Step 5: Expose the Server to the Internet (High Availability)
+The `auto_tunnel.py` script automatically manages Cloudflare Tunnels and coordinates between two phones to provide High Availability.
+
+1. **Create a Secondary Firebase Project:** Go to Firebase and create a new project just for server synchronization. Create a Firestore database.
+2. **Get Document URL:** Create a document (e.g. `serverSync/coordinator`) and copy its REST API URL.
+3. **Configure the Script:** Open `auto_tunnel.py` and replace `YOUR_SECOND_PROJECT` in the `SYNC_FIRESTORE_URL` variable with your actual URL.
+4. **Run the Script:**
 ```bash
-cloudflared tunnel --url http://localhost:3000
+python auto_tunnel.py
 ```
+If this is the first phone running it, it will become the **MASTER** and start the tunnel. If you run this on a second phone, it will detect the master and stand by as **BACKUP**. If the master goes offline, the backup instantly takes over!
 
-Cloudflare will provide you with a `.trycloudflare.com` URL in the output (e.g., `https://random-words.trycloudflare.com`).
+## Step 6: Setup Storage Synchronization (Syncthing)
+Since you are running this on two devices, they need to share the same files.
+1. Install **Syncthing** from the Google Play Store or F-Droid on both Android devices.
+2. Open Syncthing on Phone A, tap the "+" to add a folder, and select `/sdcard/Download/NetuarkMedia`.
+3. Open Syncthing on Phone B, go to "Devices" and add Phone A's Device ID to link them.
+4. Accept the folder share on Phone B, pointing it to `/sdcard/Download/NetuarkMedia`.
+Now, whenever a file is uploaded to Phone A, it instantly copies to Phone B over the internet.
 
-## Step 6: Update the Netuark App / Frontend
-In your Netuark app (`glowing-carnival` / `nta-apk-try1`), you can now configure the media URL to point to the Cloudflare link provided in Step 5.
-- The base URL is your Cloudflare URL.
-- Feed images are accessible at `<CLOUDFLARE_URL>/media/feed/filename.ext`
-- Chat images are accessible at `<CLOUDFLARE_URL>/media/chat/filename.ext`
-- You can test uploading directly by opening the Cloudflare URL in your browser.
-
-## Important Note
-For production use, instead of using the temporary `--url` flag, you can set up a permanent Cloudflare Tunnel using your own domain through the Cloudflare Zero Trust dashboard.
+## Step 7: Update the Netuark App / Frontend
+In your Netuark app (`glowing-carnival` / `nta-apk-try1`), the app will automatically read the active Cloudflare URL from your MAIN Firebase database `mobileSignins/mediaServerConfig`. No manual updates needed!
