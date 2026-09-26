@@ -37,10 +37,15 @@ def get_sync_state():
         with urllib.request.urlopen(req, timeout=5) as response:
             data = json.loads(response.read().decode())
             fields = data.get('fields', {})
-            return {
-                'master_id': fields.get('master_id', {}).get('stringValue', ''),
-                'last_updated': fields.get('last_updated', {}).get('timestampValue', '1970-01-01T00:00:00Z')
-            }
+            result = {}
+            for k, v in fields.items():
+                if v:
+                    result[k] = list(v.values())[0]
+            if 'master_id' not in result:
+                result['master_id'] = ''
+            if 'last_updated' not in result:
+                result['last_updated'] = '1970-01-01T00:00:00Z'
+            return result
     except Exception as e:
         print(f"[!] Warning: Could not read sync state from secondary Firebase: {e}")
         return None
