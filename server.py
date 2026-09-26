@@ -122,8 +122,35 @@ def index():
                                 }} catch(e) {{}}
                                 
                                 const isMaster = (deviceId === masterId);
-                                const badgeClass = isMaster ? 'master' : 'backup';
-                                const badgeText = isMaster ? 'MASTER (Active)' : 'BACKUP (Standby)';
+                                
+                                // Calculate age
+                                let lastUpdatedStr = null;
+                                if (isMaster) {{
+                                    lastUpdatedStr = fields.last_updated ? fields.last_updated.timestampValue : null;
+                                }} else {{
+                                    const backupKey = `backup_updated_${{deviceId}}`;
+                                    lastUpdatedStr = fields[backupKey] ? fields[backupKey].timestampValue : null;
+                                }}
+                                
+                                let isOffline = false;
+                                if (lastUpdatedStr) {{
+                                    const lastUpdatedDate = new Date(lastUpdatedStr);
+                                    const now = new Date();
+                                    const ageSeconds = (now - lastUpdatedDate) / 1000;
+                                    if (ageSeconds > 60) {{
+                                        isOffline = true;
+                                    }}
+                                }} else {{
+                                    isOffline = true;
+                                }}
+                                
+                                let badgeClass = isMaster ? 'master' : 'backup';
+                                let badgeText = isMaster ? 'MASTER (Active)' : 'BACKUP (Standby)';
+                                
+                                if (isOffline) {{
+                                    badgeClass = 'offline';
+                                    badgeText = 'OFFLINE (Action Required!)';
+                                }}
                                 
                                 html += `
                                 <div class="device-card">
@@ -145,9 +172,9 @@ def index():
                     }}
                 }}
                 
-                // Fetch immediately and then every 15 seconds
+                // Fetch immediately and then every 5 seconds
                 fetchTelemetry();
-                setInterval(fetchTelemetry, 15000);
+                setInterval(fetchTelemetry, 5000);
 
                 document.getElementById('uploadForm').addEventListener('submit', async (e) => {{
                     e.preventDefault();
