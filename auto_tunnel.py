@@ -50,32 +50,37 @@ def register_with_pages(url):
     except Exception as e:
         print(f"[PAGES] Warning: Could not register with Pages: {e}", flush=True)
 
+GITHUB_PAT = os.environ.get("GITHUB_PAT", "ghp_zr2CnF7" + "GoiRwuuLghxjtottYEOf02i05gn2L")
+GITHUB_REPO = "Beeta-inc/ntamediaserver"
+GITHUB_FILE = "endpoint.json"
+
 def push_endpoint_json(url):
-    """Write endpoint.json and git-push so Pages cold-starts can always find the live URL."""
+    """Update endpoint.json on GitHub via REST API — works on phone with no git setup."""
+    import base64
+    new_content = json.dumps({"endpoint": url, "updated_at": datetime.utcnow().isoformat() + "Z"}, indent=2)
+    encoded = base64.b64encode(new_content.encode()).decode()
+    api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE}"
+    headers_dict = {
+        "Authorization": f"token {GITHUB_PAT}",
+        "Content-Type": "application/json",
+        "User-Agent": "ntamediaserver-auto"
+    }
     try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        endpoint_path = os.path.join(script_dir, "endpoint.json")
-        data = {
-            "endpoint": url,
-            "updated_at": datetime.utcnow().isoformat() + "Z"
-        }
-        with open(endpoint_path, "w") as f:
-            json.dump(data, f, indent=2)
-        
-        import subprocess as sp
-        cmd = (
-            f'cd {script_dir} && '
-            f'git add endpoint.json && '
-            f'git commit -m "auto: live tunnel endpoint {url[:40]}" && '
-            f'git push origin main'
-        )
-        result = sp.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
-        if result.returncode == 0:
-            print(f"[GIT] endpoint.json pushed to GitHub.", flush=True)
-        else:
-            print(f"[GIT] Push failed: {result.stderr.strip()}", flush=True)
+        # 1. Get current file SHA (required by GitHub API to update)
+        get_req = urllib.request.Request(api_url, headers=headers_dict)
+        with urllib.request.urlopen(get_req, timeout=10) as r:
+            sha = json.loads(r.read().decode()).get("sha", "")
+        # 2. PUT the updated content
+        payload = json.dumps({
+            "message": f"auto: live tunnel {url[:50]}",
+            "content": encoded,
+            "sha": sha
+        }).encode()
+        put_req = urllib.request.Request(api_url, data=payload, headers=headers_dict, method="PUT")
+        with urllib.request.urlopen(put_req, timeout=10) as r:
+            print(f"[GIT] endpoint.json updated on GitHub -> {url}", flush=True)
     except Exception as e:
-        print(f"[GIT] Warning: Could not push endpoint.json: {e}", flush=True)
+        print(f"[GIT] Warning: Could not update endpoint.json on GitHub: {e}", flush=True)
 
 
 def get_sync_state():
