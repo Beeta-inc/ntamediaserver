@@ -31,7 +31,8 @@ for directory in [FEED_DIR, CHAT_DIR, VIDEO_DIR, DOC_DIR]:
 def add_cors_headers(response):
     response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Range'
+    response.headers['Access-Control-Expose-Headers'] = 'Accept-Ranges, Content-Encoding, Content-Length, Content-Range'
     return response
 
 @app.route('/')
@@ -307,7 +308,7 @@ def rest_upload(folder, filename):
         
     return jsonify({"success": True, "url": f"/v1/storage/objects/{folder}/{filename}"}), 200
 
-@app.route('/v1/storage/objects/<folder>/<filename>', methods=['GET'])
+@app.route('/v1/storage/objects/<folder>/<filename>', methods=['GET', 'OPTIONS'])
 def rest_serve(folder, filename):
     if folder == 'avatars' or folder == 'banners':
         target_dir = DOC_DIR
