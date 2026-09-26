@@ -1,65 +1,132 @@
-# Netuark Mobile Media Server Setup
+# Netuark Media Server — Self-Hosted Android Media CDN
 
-This server is designed to run on your Android mobile device using Termux, and be exposed to the internet via Cloudflare Tunnels (completely free). It will serve media files for the **feed** and **chat** features.
+> Run a media server on an Android phone (Termux), exposed permanently to the internet via Cloudflare Pages. Zero cloud storage costs. No API keys needed by callers.
 
-## Step 1: Install Required Apps on Android
-1. Install **Termux** from F-Droid (do not use the Google Play Store version as it's deprecated).
-2. Open Termux on your Android device.
+---
 
-## Step 2: Prepare Termux Environment
-Run these commands inside Termux to set up the necessary tools:
+## Architecture
+
+```
+Netuark App
+    │
+    ▼
+https://ntamediaserver.pages.dev   ← permanent URL, never changes
+    │  (Cloudflare Pages — reverse proxies to live phone tunnel)
+    │  (discovers live URL from endpoint.json on GitHub, refreshes every 10s)
+    ▼
+https://xxxx.trycloudflare.com     ← changes on restart, auto-registered
+    │
+    ▼
+Flask server on phone (port 3000)
+    │
+    ▼
+/sdcard/Download/NetuarkMedia/     ← actual files (feed, chat, videos, docs)
+```
+
+**Two phones run simultaneously** — one MASTER (serves traffic), one BACKUP (syncs files, takes over if master dies).
+
+---
+
+## API Endpoints
+
+All requests go to `https://ntamediaserver.pages.dev`. No auth required.
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/upload` | Upload a file. Form fields: `file` (binary), `type` (`feed` \| `chat` \| `videos` \| `docs`) |
+| `GET` | `/media/<type>/<filename>` | Serve a media file |
+| `PUT` | `/v1/storage/objects/<folder>/<filename>` | REST upload (raw body) |
+| `GET` | `/v1/storage/objects/<folder>/<filename>` | REST serve |
+| `GET` | `/api/sync/list` | Returns JSON map of all files + sizes (used for inter-device sync) |
+| `GET` | `/register_tunnel` | Returns currently active tunnel origin |
+
+**Storage folders:**
+
+| `type` param | Physical path on phone |
+| :--- | :--- |
+| `feed` | `/sdcard/Download/NetuarkMedia/feed/` |
+| `chat` | `/sdcard/Download/NetuarkMedia/chat/` |
+| `videos` | `/sdcard/Download/NetuarkMedia/videos/` |
+| `docs` | `/sdcard/Download/NetuarkMedia/docs/` |
+
+---
+
+## Phone Setup (Termux — run once)
+
 ```bash
-# Update packages
-pkg update && pkg upgrade -y
+# 1. Install deps
+pkg update -y && pkg install python git cloudflared -y
+pip install flask
 
-# Install Node.js, git, and Cloudflared
-pkg install nodejs git cloudflared -y
+# 2. Clone the repo
+git clone https://github.com/Beeta-inc/ntamediaserver.git ~/ntamediaserver
+cd ~/ntamediaserver
 
-# Give Termux access to your phone's storage
+# 3. Allow storage access
 termux-setup-storage
 ```
 
-## Step 3: Transfer the Server to your Phone
-Since you're connected via ADB, we can push this `ntamediaserver` directory directly to your phone's storage. On your PC, run:
-```bash
-adb push /home/noywrit/ntamediaserver /sdcard/
-```
+---
 
-Then, in Termux on your phone, copy it to the internal Termux home directory so it can be executed properly:
+## Running the Server
+
 ```bash
-cp -r /sdcard/ntamediaserver ~/
 cd ~/ntamediaserver
-
-# Install the Node.js modules
-npm install
+bash start_cluster.sh
 ```
 
-## Step 4: Run the Media Server
-Still inside Termux, start the Node.js server:
+This starts both `server.py` (port 3000) and `auto_tunnel.py` in the background with logs at `server.log` and `tunnel.log`.
+
+**What `auto_tunnel.py` does automatically on start:**
+1. Launches `cloudflared` tunnel → gets a `trycloudflare.com` URL
+2. POSTs the URL to `https://ntamediaserver.pages.dev/register_tunnel` — Pages knows immediately
+3. Pushes `endpoint.json` to GitHub — Pages survives cold restarts
+4. Sends heartbeats every 10s to Firebase for Master/Backup election
+5. If Master dies (no heartbeat for 30s), Backup auto-promotes itself
+
+---
+
+## Cloudflare Pages Setup (one time)
+
+1. Go to [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages → Create → Pages**
+2. **Connect to Git** → select `Beeta-inc/ntamediaserver`
+3. Build settings:
+   - Framework preset: **None**
+   - Build command: *(blank)*
+   - Build output directory: `.`
+4. **Save and Deploy**
+
+Your permanent URL: `https://ntamediaserver.pages.dev`
+
+---
+
+## File Sync Between Two Phones
+
+`auto_tunnel.py` has a built-in background sync loop:
+- Backup phone checks master's `/api/sync/list` every 5s
+- Downloads any missing or size-mismatched files concurrently (5 threads)
+- No Syncthing required — it's all built in
+
+For physical file sharing (optional fallback): use **Syncthing** on both phones pointed at `/sdcard/Download/NetuarkMedia`.
+
+---
+
+## Firebase Config
+
+Two Firebase projects are used:
+
+| Project | Variable | Purpose |
+| :--- | :--- | :--- |
+| Main app Firebase | `MAIN_FIRESTORE_URL` | Stores active tunnel URL — Netuark app reads this |
+| Sync Firebase | `SYNC_FIRESTORE_URL` | Master/Backup election + heartbeats + telemetry |
+
+Both are in `auto_tunnel.py` at the top. Edit before running if needed.
+
+---
+
+## Logs
+
 ```bash
-npm start
+tail -f ~/ntamediaserver/server.log   # Flask server
+tail -f ~/ntamediaserver/tunnel.log   # Cloudflare tunnel + sync
 ```
-The server will now run on port 3000 (`http://localhost:3000`).
-
-## Step 5: Expose the Server to the Internet (High Availability)
-The `auto_tunnel.py` script automatically manages Cloudflare Tunnels and coordinates between two phones to provide High Availability.
-
-1. **Create a Secondary Firebase Project:** Go to Firebase and create a new project just for server synchronization. Create a Firestore database.
-2. **Get Document URL:** Create a document (e.g. `serverSync/coordinator`) and copy its REST API URL.
-3. **Configure the Script:** Open `auto_tunnel.py` and replace `YOUR_SECOND_PROJECT` in the `SYNC_FIRESTORE_URL` variable with your actual URL.
-4. **Run the Script:**
-```bash
-python auto_tunnel.py
-```
-If this is the first phone running it, it will become the **MASTER** and start the tunnel. If you run this on a second phone, it will detect the master and stand by as **BACKUP**. If the master goes offline, the backup instantly takes over!
-
-## Step 6: Setup Storage Synchronization (Syncthing)
-Since you are running this on two devices, they need to share the same files.
-1. Install **Syncthing** from the Google Play Store or F-Droid on both Android devices.
-2. Open Syncthing on Phone A, tap the "+" to add a folder, and select `/sdcard/Download/NetuarkMedia`.
-3. Open Syncthing on Phone B, go to "Devices" and add Phone A's Device ID to link them.
-4. Accept the folder share on Phone B, pointing it to `/sdcard/Download/NetuarkMedia`.
-Now, whenever a file is uploaded to Phone A, it instantly copies to Phone B over the internet.
-
-## Step 7: Update the Netuark App / Frontend
-In your Netuark app (`glowing-carnival` / `nta-apk-try1`), the app will automatically read the active Cloudflare URL from your MAIN Firebase database `mobileSignins/mediaServerConfig`. No manual updates needed!
