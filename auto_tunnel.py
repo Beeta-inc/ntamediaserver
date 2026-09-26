@@ -99,6 +99,10 @@ def update_sync_state(role):
         data["fields"]["master_id"] = {"stringValue": DEVICE_ID}
         data["fields"]["last_updated"] = {"timestampValue": datetime.utcnow().isoformat() + "Z"}
         update_paths += "&updateMask.fieldPaths=master_id&updateMask.fieldPaths=last_updated"
+    else:
+        backup_updated_field = f"backup_updated_{DEVICE_ID}"
+        data["fields"][backup_updated_field] = {"timestampValue": datetime.utcnow().isoformat() + "Z"}
+        update_paths += f"&updateMask.fieldPaths={backup_updated_field}"
         
     if current_url:
         data["fields"][peer_url_field] = {"stringValue": current_url}
@@ -255,6 +259,22 @@ def run_coordinator():
             # I am the master, or taking over!
             if not am_i_master:
                 print(f"[!] Master died! Taking over as new MASTER. (Age: {age_seconds}s)")
+            else:
+                # I am already the Master. Let's check on the backups!
+                for key, val in state.items():
+                    if key.startswith('backup_updated_'):
+                        backup_id = key.replace('backup_updated_', '')
+                        backup_last_str = val.replace('Z', '')
+                        if '.' in backup_last_str:
+                            backup_last = datetime.strptime(backup_last_str, "%Y-%m-%dT%H:%M:%S.%f")
+                        else:
+                            backup_last = datetime.strptime(backup_last_str, "%Y-%m-%dT%H:%M:%S")
+                        
+                        backup_age = (now - backup_last).total_seconds()
+                        if backup_age > TIMEOUT_THRESHOLD * 2:
+                            print(f"[!] WARNING: Backup Server {backup_id} is OFFLINE! (No heartbeat for {int(backup_age)}s). Please start it!")
+                        else:
+                            print(f"[+] Backup Server {backup_id} is ONLINE (Ping: {int(backup_age)}s ago).")
             
             update_sync_state("master")
             if current_url and current_url != last_pushed_url:
