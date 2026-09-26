@@ -29,6 +29,7 @@ TIMEOUT_THRESHOLD = 30   # Seconds before a master is considered "dead"
 
 current_process = None
 current_url = None
+last_pushed_url = None
 
 def get_sync_state():
     try:
@@ -202,7 +203,7 @@ def sync_files_loop():
         time.sleep(5)
 
 def run_coordinator():
-    global current_process
+    global current_process, last_pushed_url
     print(f"Starting HA Tunnel Coordinator. Device ID: {DEVICE_ID}")
     
     # Start our own P2P tunnel unconditionally!
@@ -256,8 +257,9 @@ def run_coordinator():
                 print(f"[!] Master died! Taking over as new MASTER. (Age: {age_seconds}s)")
             
             update_sync_state("master")
-            if current_url:
+            if current_url and current_url != last_pushed_url:
                 update_main_firebase(current_url)
+                last_pushed_url = current_url
             
             # If process died unexpectedly, restart it
             if current_process and current_process.poll() is not None:
