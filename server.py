@@ -2,6 +2,8 @@ import os
 from flask import Flask, request, jsonify, send_from_directory, render_template_string
 from werkzeug.utils import secure_filename
 import time
+import urllib.request
+import json
 import sys
 
 # Attempt to load the sync URL from the tunnel script
@@ -201,6 +203,50 @@ def upload_file():
         'fileUrl': file_url
     })
 
+def fallback_and_serve(target_dir, folder, filename):
+    file_path = os.path.join(target_dir, filename)
+    if os.path.exists(file_path):
+        return send_from_directory(target_dir, filename)
+        
+    for fallback_dir in [CHAT_DIR, FEED_DIR, DOC_DIR, VIDEO_DIR]:
+        if os.path.exists(os.path.join(fallback_dir, filename)):
+            return send_from_directory(fallback_dir, filename)
+            
+    # P2P Fallback
+    try:
+        device_id = ""
+        if os.path.exists('.device_id'):
+            with open('.device_id', 'r') as f:
+                device_id = f.read().strip()
+                
+        req = urllib.request.Request("https://firestore.googleapis.com/v1/projects/ntamedia-1f03d/databases/(default)/documents/serverSync/coordinator")
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode())
+            
+        peer_urls = []
+        for key, value in data.get('fields', {}).items():
+            if key.startswith('peer_url_') and key != f'peer_url_{device_id}':
+                peer_urls.append(value.get('stringValue'))
+                
+        for peer in peer_urls:
+            try:
+                peer_file_url = f"{peer}/media/{folder}/{filename}"
+                print(f"[*] P2P Fallback: Fetching {filename} from {peer}")
+                dl_req = urllib.request.Request(peer_file_url)
+                with urllib.request.urlopen(dl_req, timeout=10) as dl_res:
+                    if dl_res.status == 200:
+                        with open(file_path, 'wb') as out_f:
+                            out_f.write(dl_res.read())
+                        print(f"[+] Successfully downloaded {filename} from peer!")
+                        return send_from_directory(target_dir, filename)
+            except Exception as e:
+                print(f"[-] Peer fetch failed for {peer}: {e}")
+    except Exception as e:
+        print(f"Failed to get peer URLs: {e}")
+            
+    # If all fails, let Flask return a standard 404
+    return send_from_directory(target_dir, filename)
+
 @app.route('/media/<folder>/<filename>')
 def serve_media(folder, filename):
     if folder == 'feed':
@@ -212,7 +258,7 @@ def serve_media(folder, filename):
     else:
         target_dir = CHAT_DIR
         
-    return send_from_directory(target_dir, filename)
+    return fallback_and_serve(target_dir, folder, filename)
 
 @app.route('/v1/storage/objects/<folder>/<filename>', methods=['PUT', 'OPTIONS'])
 def rest_upload(folder, filename):
@@ -243,7 +289,7 @@ def rest_serve(folder, filename):
     else:
         target_dir = CHAT_DIR
         
-    return send_from_directory(target_dir, filename)
+    return fallback_and_serve(target_dir, folder, filename)
 
 @app.route('/api/sync/list')
 def sync_list():

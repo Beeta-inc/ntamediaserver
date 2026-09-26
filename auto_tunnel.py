@@ -85,16 +85,25 @@ def get_telemetry():
 def update_sync_state(role):
     telemetry_json = get_telemetry()
     telemetry_field = f"telemetry_{DEVICE_ID}"
+    peer_url_field = f"peer_url_{DEVICE_ID}"
     
     data = {
         "fields": {
-            "master_id": {"stringValue": DEVICE_ID},
-            "last_updated": {"timestampValue": datetime.utcnow().isoformat() + "Z"},
             telemetry_field: {"stringValue": telemetry_json}
         }
     }
+    update_paths = f"updateMask.fieldPaths={telemetry_field}"
     
-    url = SYNC_FIRESTORE_URL + f"?updateMask.fieldPaths=master_id&updateMask.fieldPaths=last_updated&updateMask.fieldPaths={telemetry_field}"
+    if role == "master":
+        data["fields"]["master_id"] = {"stringValue": DEVICE_ID}
+        data["fields"]["last_updated"] = {"timestampValue": datetime.utcnow().isoformat() + "Z"}
+        update_paths += "&updateMask.fieldPaths=master_id&updateMask.fieldPaths=last_updated"
+        
+    if current_url:
+        data["fields"][peer_url_field] = {"stringValue": current_url}
+        update_paths += f"&updateMask.fieldPaths={peer_url_field}"
+    
+    url = SYNC_FIRESTORE_URL + "?" + update_paths
     try:
         req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), method='PATCH')
         req.add_header('Content-Type', 'application/json')
@@ -128,14 +137,13 @@ def read_cloudflared_output(process):
             match = re.search(r'(https://[a-zA-Z0-9-]+\.trycloudflare\.com)', line)
             if match:
                 current_url = match.group(1)
-                update_main_firebase(current_url)
 
 def start_tunnel():
     global current_process, current_url
     if current_process is not None:
         return # Already running
         
-    print("[*] Starting Cloudflare Tunnel as MASTER...")
+    print("[*] Starting Cloudflare Tunnel...")
     current_url = None
     current_process = subprocess.Popen(
         ["cloudflared", "tunnel", "--url", "http://localhost:3000"],
@@ -148,16 +156,6 @@ def start_tunnel():
     t = threading.Thread(target=read_cloudflared_output, args=(current_process,))
     t.daemon = True
     t.start()
-
-def stop_tunnel():
-    global current_process, current_url
-    if current_process:
-        print("[*] Stopping Cloudflare Tunnel (Returning to BACKUP mode)...")
-        current_process.terminate()
-        current_process = None
-        current_url = None
-        # Make sure cloudflared is totally dead
-        subprocess.run(["pkill", "-f", "cloudflared"])
 
 def _download_sync_file(master_url, folder, f, local_path):
     print(f"[*] Built-in Sync: Downloading missing file {folder}/{f}")
@@ -173,15 +171,13 @@ def sync_files_loop():
     BASE_DIR = '/sdcard/Download/NetuarkMedia'
     while True:
         try:
-            # Only sync if we are BACKUP (tunnel is not running)
-            if current_process is None:
-                req = urllib.request.Request(MAIN_FIRESTORE_URL)
-                with urllib.request.urlopen(req, timeout=5) as response:
-                    data = json.loads(response.read().decode())
-                    master_url = data.get('fields', {}).get('url', {}).get('stringValue')
+            state = get_sync_state()
+            if state and state.get('master_id') and state.get('master_id') != DEVICE_ID:
+                master_id = state.get('master_id')
+                master_peer_url = state.get(f'peer_url_{master_id}')
                 
-                if master_url:
-                    list_req = urllib.request.Request(f"{master_url}/api/sync/list")
+                if master_peer_url:
+                    list_req = urllib.request.Request(f"{master_peer_url}/api/sync/list")
                     with urllib.request.urlopen(list_req, timeout=10) as list_res:
                         master_files = json.loads(list_res.read().decode())
                         
@@ -192,7 +188,7 @@ def sync_files_loop():
                         for f, size in files.items():
                             local_path = os.path.join(local_dir, f)
                             if not os.path.exists(local_path) or os.path.getsize(local_path) != size:
-                                download_tasks.append((master_url, folder, f, local_path))
+                                download_tasks.append((master_peer_url, folder, f, local_path))
                     
                     if download_tasks:
                         print(f"[*] Built-in Sync: Found {len(download_tasks)} missing files. Downloading concurrently...")
@@ -208,6 +204,9 @@ def sync_files_loop():
 def run_coordinator():
     global current_process
     print(f"Starting HA Tunnel Coordinator. Device ID: {DEVICE_ID}")
+    
+    # Start our own P2P tunnel unconditionally!
+    start_tunnel()
     
     # Start the built-in background file synchronizer
     sync_thread = threading.Thread(target=sync_files_loop)
@@ -257,7 +256,8 @@ def run_coordinator():
                 print(f"[!] Master died! Taking over as new MASTER. (Age: {age_seconds}s)")
             
             update_sync_state("master")
-            start_tunnel()
+            if current_url:
+                update_main_firebase(current_url)
             
             # If process died unexpectedly, restart it
             if current_process and current_process.poll() is not None:
@@ -268,7 +268,12 @@ def run_coordinator():
         else:
             # I am backup
             print(f"[-] Standing by as BACKUP. Master {state['master_id']} is alive (Ping: {int(age_seconds)}s ago).")
-            stop_tunnel()
+            update_sync_state("backup")
+            
+            if current_process and current_process.poll() is not None:
+                print("Backup Tunnel crashed. Restarting...")
+                current_process = None
+                start_tunnel()
             
         time.sleep(HEARTBEAT_INTERVAL)
 
@@ -277,4 +282,6 @@ if __name__ == "__main__":
         run_coordinator()
     except KeyboardInterrupt:
         print("\nExiting...")
-        stop_tunnel()
+        if current_process:
+            current_process.terminate()
+            subprocess.run(["pkill", "-f", "cloudflared"])
