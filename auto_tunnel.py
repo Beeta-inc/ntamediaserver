@@ -7,6 +7,7 @@ import uuid
 import sys
 import os
 from datetime import datetime
+import concurrent.futures
 
 # ---------------- CONFIGURATION ----------------
 # The MAIN Firebase that your app reads the URL from
@@ -158,6 +159,16 @@ def stop_tunnel():
         # Make sure cloudflared is totally dead
         subprocess.run(["pkill", "-f", "cloudflared"])
 
+def _download_sync_file(master_url, folder, f, local_path):
+    print(f"[*] Built-in Sync: Downloading missing file {folder}/{f}")
+    try:
+        dl_req = urllib.request.Request(f"{master_url}/media/{folder}/{f}")
+        with urllib.request.urlopen(dl_req, timeout=60) as dl_res:
+            with open(local_path, 'wb') as out_f:
+                out_f.write(dl_res.read())
+    except Exception as e:
+        print(f"[-] Sync error for {f}: {e}")
+
 def sync_files_loop():
     BASE_DIR = '/sdcard/Download/NetuarkMedia'
     while True:
@@ -174,23 +185,25 @@ def sync_files_loop():
                     with urllib.request.urlopen(list_req, timeout=10) as list_res:
                         master_files = json.loads(list_res.read().decode())
                         
+                    download_tasks = []
                     for folder, files in master_files.items():
                         local_dir = os.path.join(BASE_DIR, folder)
                         os.makedirs(local_dir, exist_ok=True)
                         for f, size in files.items():
                             local_path = os.path.join(local_dir, f)
                             if not os.path.exists(local_path) or os.path.getsize(local_path) != size:
-                                print(f"[*] Built-in Sync: Downloading missing file {folder}/{f}")
-                                try:
-                                    dl_req = urllib.request.Request(f"{master_url}/media/{folder}/{f}")
-                                    with urllib.request.urlopen(dl_req, timeout=60) as dl_res:
-                                        with open(local_path, 'wb') as out_f:
-                                            out_f.write(dl_res.read())
-                                except Exception as e:
-                                    print(f"[-] Sync error for {f}: {e}")
+                                download_tasks.append((master_url, folder, f, local_path))
+                    
+                    if download_tasks:
+                        print(f"[*] Built-in Sync: Found {len(download_tasks)} missing files. Downloading concurrently...")
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                            futures = [executor.submit(_download_sync_file, *task) for task in download_tasks]
+                            concurrent.futures.wait(futures)
+                        print("[*] Built-in Sync: Download batch complete.")
         except Exception as e:
             pass
-        time.sleep(30)
+        # Reduced sleep from 30s to 5s for much faster syncing while idle
+        time.sleep(5)
 
 def run_coordinator():
     global current_process
