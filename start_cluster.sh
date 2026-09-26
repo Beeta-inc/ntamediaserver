@@ -1,7 +1,8 @@
 #!/bin/bash
-pkill -f python
-cp -r /sdcard/ntamediaserver ~/
+pkill -f server.py
+pkill -f auto_tunnel.py
 cd ~/ntamediaserver
-nohup python server.py > server.log 2>&1 &
-nohup python auto_tunnel.py > tunnel.log 2>&1 &
-echo "Cluster Started successfully!"
+git pull
+nohup python3 server.py > server.log 2>&1 &
+nohup python3 auto_tunnel.py > tunnel.log 2>&1 &
+echo "Started. Logs: server.log / tunnel.log"
