@@ -25,11 +25,58 @@ with open('.device_id', 'r') as f:
 
 HEARTBEAT_INTERVAL = 10  # Seconds between heartbeats
 TIMEOUT_THRESHOLD = 30   # Seconds before a master is considered "dead"
+
+# Cloudflare Pages permanent URL — register live tunnel here
+PAGES_REG_URL = "https://ntamediaserver.pages.dev/register_tunnel"
+PAGES_SHARED_SECRET = "ntamedia_tunnel_key"
 # -----------------------------------------------
 
 current_process = None
 current_url = None
 last_pushed_url = None
+
+def register_with_pages(url):
+    """Hit the Cloudflare Pages edge function so it immediately knows the new tunnel URL."""
+    try:
+        payload = json.dumps({"endpoint": url, "secret": PAGES_SHARED_SECRET}).encode()
+        req = urllib.request.Request(
+            PAGES_REG_URL,
+            data=payload,
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+            print(f"[PAGES] Registered with Cloudflare Pages: {data.get('status')} -> {data.get('active_origin')}", flush=True)
+    except Exception as e:
+        print(f"[PAGES] Warning: Could not register with Pages: {e}", flush=True)
+
+def push_endpoint_json(url):
+    """Write endpoint.json and git-push so Pages cold-starts can always find the live URL."""
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        endpoint_path = os.path.join(script_dir, "endpoint.json")
+        data = {
+            "endpoint": url,
+            "updated_at": datetime.utcnow().isoformat() + "Z"
+        }
+        with open(endpoint_path, "w") as f:
+            json.dump(data, f, indent=2)
+        
+        import subprocess as sp
+        cmd = (
+            f'cd {script_dir} && '
+            f'git add endpoint.json && '
+            f'git commit -m "auto: live tunnel endpoint {url[:40]}" && '
+            f'git push origin main'
+        )
+        result = sp.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+        if result.returncode == 0:
+            print(f"[GIT] endpoint.json pushed to GitHub.", flush=True)
+        else:
+            print(f"[GIT] Push failed: {result.stderr.strip()}", flush=True)
+    except Exception as e:
+        print(f"[GIT] Warning: Could not push endpoint.json: {e}", flush=True)
+
 
 def get_sync_state():
     try:
@@ -147,6 +194,11 @@ def read_cloudflared_output(process):
             match = re.search(r'(https://[a-zA-Z0-9-]+\.trycloudflare\.com)', line)
             if match:
                 current_url = match.group(1)
+                print(f"\n[+] LIVE TUNNEL: {current_url}\n", flush=True)
+                # Register with Cloudflare Pages (permanent URL) immediately
+                threading.Thread(target=register_with_pages, args=(current_url,), daemon=True).start()
+                # Push endpoint.json to GitHub so Pages cold-starts can find the URL
+                threading.Thread(target=push_endpoint_json, args=(current_url,), daemon=True).start()
 
 def start_tunnel():
     global current_process, current_url
