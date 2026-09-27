@@ -293,6 +293,31 @@ def sync_files_loop():
             pass
         time.sleep(20)
 
+def auto_git_update_loop():
+    """Autonomous Internal Communicator: monitors GitHub repo for new commits, pulls updates, and reloads server."""
+    print("[COMMUNICATOR] 🛡️ Autonomous Auto-Update Watchdog active (polling origin/main every 30s)...", flush=True)
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
+    while True:
+        try:
+            time.sleep(30)
+            res = subprocess.run(["git", "ls-remote", "origin", "refs/heads/main"], cwd=repo_dir, capture_output=True, text=True, timeout=15)
+            if res.returncode == 0 and res.stdout.strip():
+                remote_sha = res.stdout.strip().split()[0]
+                local_sha_res = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_dir, capture_output=True, text=True, timeout=5)
+                local_sha = local_sha_res.stdout.strip() if local_sha_res.returncode == 0 else ""
+                
+                if remote_sha and local_sha and remote_sha != local_sha:
+                    print(f"[COMMUNICATOR] 🚀 Remote update detected ({local_sha[:7]} -> {remote_sha[:7]}). Auto-pulling...", flush=True)
+                    pull_res = subprocess.run(["git", "pull", "--rebase", "origin", "main"], cwd=repo_dir, capture_output=True, text=True, timeout=30)
+                    print(f"[COMMUNICATOR] Git Pull Output:\n{pull_res.stdout}", flush=True)
+                    print("[COMMUNICATOR] Restarting server.py with updated codebase...", flush=True)
+                    subprocess.run(["pkill", "-f", "server.py"])
+                    time.sleep(1.5)
+                    subprocess.Popen([sys.executable, os.path.join(repo_dir, "server.py")], cwd=repo_dir)
+                    print("[COMMUNICATOR] Server restarted successfully!", flush=True)
+        except Exception as e:
+            pass
+
 def run_coordinator():
     global current_process, last_pushed_url
     print(f"Starting HA Tunnel Coordinator. Device ID: {DEVICE_ID}")
@@ -304,8 +329,11 @@ def run_coordinator():
     sync_thread = threading.Thread(target=sync_files_loop)
     sync_thread.daemon = True
     sync_thread.start()
-    
-    failed_attempts = 0
+
+    # Start the autonomous communicator update watchdog
+    watchdog_thread = threading.Thread(target=auto_git_update_loop)
+    watchdog_thread.daemon = True
+    watchdog_thread.start()
     
     while True:
         state = get_sync_state()

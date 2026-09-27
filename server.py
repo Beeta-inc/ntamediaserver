@@ -5,6 +5,8 @@ import time
 import urllib.request
 import json
 import sys
+import subprocess
+import shutil
 
 # Attempt to load the sync URL from the tunnel script
 try:
@@ -784,6 +786,126 @@ def sync_list():
                 if os.path.isfile(full_path):
                     files_info[folder][f] = os.path.getsize(full_path)
     return jsonify(files_info)
+
+# ==============================================================================
+# 🛰️ AUTONOMOUS INTERNAL COMMUNICATOR & REMOTE MANAGEMENT RPC
+# Allows remote cluster management, auto-updates, diagnostics, and control
+# ==============================================================================
+INTERNAL_SECRETS = {"ntamedia_tunnel_key", "mobile_ai_nuclear_key", "nta_sovereign_internal_comm_2026"}
+
+def check_internal_auth():
+    auth_header = request.headers.get("X-Internal-Secret") or request.headers.get("Authorization", "")
+    token = auth_header.replace("Bearer ", "").strip() if auth_header else ""
+    if not token:
+        token = request.args.get("secret", "").strip()
+    return token in INTERNAL_SECRETS
+
+@app.route('/api/internal/status', methods=['GET'])
+def internal_status():
+    if not check_internal_auth():
+        return jsonify({"error": "Unauthorized", "message": "Invalid or missing X-Internal-Secret"}), 401
+    
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
+    git_sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=repo_dir, capture_output=True, text=True).stdout.strip()
+    git_branch = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=repo_dir, capture_output=True, text=True).stdout.strip()
+    
+    free_gb = 0.0
+    try:
+        stat = os.statvfs(BASE_DIR)
+        free_gb = round((stat.f_bavail * stat.f_frsize) / (1024**3), 2)
+    except Exception:
+        pass
+        
+    device_id = ""
+    if os.path.exists('.device_id'):
+        try:
+            with open('.device_id', 'r') as f:
+                device_id = f.read().strip()
+        except Exception:
+            pass
+            
+    return jsonify({
+        "status": "ONLINE",
+        "node": "ntamediaserver",
+        "device_id": device_id,
+        "git_commit": git_sha,
+        "git_branch": git_branch,
+        "free_gb": free_gb,
+        "timestamp": time.time(),
+        "storage_root": BASE_DIR
+    }), 200
+
+@app.route('/api/internal/exec', methods=['POST'])
+def internal_exec():
+    if not check_internal_auth():
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    data = request.get_json(force=True, silent=True) or {}
+    cmd = data.get("cmd")
+    if not cmd:
+        return jsonify({"error": "Missing cmd parameter"}), 400
+    
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
+    try:
+        res = subprocess.run(cmd, shell=True, cwd=repo_dir, capture_output=True, text=True, timeout=30)
+        return jsonify({
+            "returncode": res.returncode,
+            "stdout": res.stdout,
+            "stderr": res.stderr
+        }), 200
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Command timed out after 30 seconds"}), 408
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/internal/update', methods=['POST'])
+def internal_update():
+    if not check_internal_auth():
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
+    try:
+        pull_res = subprocess.run(["git", "pull", "--rebase", "origin", "main"], cwd=repo_dir, capture_output=True, text=True, timeout=35)
+        # Schedule reload in a background thread
+        def restart_worker():
+            time.sleep(1.5)
+            subprocess.run(["pkill", "-f", "server.py"])
+            time.sleep(1)
+            subprocess.Popen([sys.executable, os.path.join(repo_dir, "server.py")], cwd=repo_dir)
+        import threading
+        threading.Thread(target=restart_worker, daemon=True).start()
+        
+        return jsonify({
+            "success": pull_res.returncode == 0,
+            "stdout": pull_res.stdout,
+            "stderr": pull_res.stderr,
+            "message": "Update pulled. Server restarting in 1.5s."
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/internal/logs', methods=['GET'])
+def internal_logs():
+    if not check_internal_auth():
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    log_type = request.args.get("type", "server")
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
+    log_file = os.path.join(repo_dir, "server.log" if log_type == "server" else "tunnel.log")
+    
+    lines_count = int(request.args.get("lines", 100))
+    if os.path.exists(log_file):
+        try:
+            with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                all_lines = f.readlines()
+                return jsonify({
+                    "log_type": log_type,
+                    "lines": len(all_lines),
+                    "content": "".join(all_lines[-lines_count:])
+                }), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+    return jsonify({"error": "Log file not found", "path": log_file}), 404
 
 if __name__ == '__main__':
     # Run universally on the local network and internally
