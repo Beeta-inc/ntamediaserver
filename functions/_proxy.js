@@ -59,6 +59,36 @@ export async function handleRequest(context) {
   if (request.method === "OPTIONS") return handleOptions();
 
   const url = new URL(request.url);
+
+  // Directly serve /docs and /docs.html at Edge
+  if (url.pathname === "/docs" || url.pathname === "/docs.html" || url.pathname === "/docs/") {
+    if (context.env && context.env.ASSETS) {
+      try {
+        const assetRes = await context.env.ASSETS.fetch(new URL("/docs.html", url.origin));
+        if (assetRes.ok) {
+          const headers = new Headers(assetRes.headers);
+          Object.entries(CORS_HEADERS).forEach(([k, v]) => headers.set(k, v));
+          headers.set("Content-Type", "text/html; charset=utf-8");
+          return new Response(assetRes.body, { status: 200, headers });
+        }
+      } catch (_) {}
+    }
+    try {
+      const ghRes = await fetch("https://raw.githubusercontent.com/Beeta-inc/ntamediaserver/main/docs.html");
+      if (ghRes.ok) {
+        const html = await ghRes.text();
+        return new Response(html, {
+          status: 200,
+          headers: {
+            ...CORS_HEADERS,
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "public, max-age=60"
+          }
+        });
+      }
+    } catch (_) {}
+  }
+
   let origin = await getLiveOrigin(false);
   let targetUrl = `${origin}${url.pathname}${url.search}`;
 
