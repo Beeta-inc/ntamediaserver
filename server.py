@@ -462,9 +462,14 @@ def index():
 
                                     // Determine health
                                     let isAlive = false;
+                                    let ageSec = Infinity;
                                     if (devUpdateStr) {{
-                                        const ageSec = (Date.now() - new Date(devUpdateStr).getTime()) / 1000;
+                                        ageSec = (Date.now() - new Date(devUpdateStr).getTime()) / 1000;
                                         isAlive = (ageSec < 45);
+                                    }}
+                                    // Automatically prune stale ghost replica nodes offline for > 1 hour
+                                    if (!isMaster && !isAlive && ageSec > 3600) {{
+                                        continue;
                                     }}
                                     if (isAlive) onlineCount++;
 
