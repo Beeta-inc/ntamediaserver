@@ -46,167 +46,498 @@ def docs():
 @app.route('/')
 def index():
     return f"""
-    <html>
+    <!DOCTYPE html>
+    <html lang="en">
         <head>
-            <title>Netuark HA Media Server</title>
+            <title>Netuark HA Media Cluster — Live Dashboard</title>
+            <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
+            <link rel="preconnect" href="https://fonts.googleapis.com">
+            <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+            <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
             <style>
-                body {{ font-family: sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; background: #f4f4f9; }}
-                .top-bar {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }}
-                .docs-btn {{ background: #10b981; color: white; padding: 8px 14px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 14px; }}
-                .docs-btn:hover {{ background: #059669; }}
-                .container {{ background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }}
-                h1, h2 {{ color: #333; }}
-                .form-group {{ margin-bottom: 15px; }}
-                label {{ display: block; margin-bottom: 5px; font-weight: bold; }}
-                input, select, button {{ width: 100%; padding: 10px; box-sizing: border-box; border-radius: 4px; border: 1px solid #ccc; }}
-                button {{ background: #007bff; color: white; border: none; cursor: pointer; margin-top: 10px; font-weight: bold; }}
-                button:hover {{ background: #0056b3; }}
-                #result {{ margin-top: 15px; word-wrap: break-word; }}
-                a {{ color: #007bff; text-decoration: none; }}
+                :root {{
+                    --bg-dark: #070b13;
+                    --card-bg: #0f172a;
+                    --border: #1e293b;
+                    --cyan: #00f3ff;
+                    --emerald: #10b981;
+                    --amber: #f59e0b;
+                    --rose: #f43f5e;
+                    --blue: #3b82f6;
+                    --text-main: #f8fafc;
+                    --text-sub: #94a3b8;
+                }}
+                * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+                body {{
+                    font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+                    background: var(--bg-dark);
+                    color: var(--text-main);
+                    padding: 24px 16px;
+                    max-width: 960px;
+                    margin: 0 auto;
+                    line-height: 1.5;
+                }}
+                .top-bar {{
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    padding-bottom: 20px;
+                    border-bottom: 1px solid var(--border);
+                    margin-bottom: 24px;
+                }}
+                .brand-title {{
+                    font-size: 20px;
+                    font-weight: 800;
+                    letter-spacing: -0.02em;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                }}
+                .brand-badge {{
+                    font-family: 'JetBrains Mono', monospace;
+                    font-size: 11px;
+                    background: rgba(0, 243, 255, 0.1);
+                    color: var(--cyan);
+                    padding: 3px 8px;
+                    border-radius: 6px;
+                    border: 1px solid rgba(0, 243, 255, 0.2);
+                }}
+                .docs-btn {{
+                    background: linear-gradient(135deg, #10b981, #059669);
+                    color: #fff;
+                    padding: 8px 16px;
+                    border-radius: 8px;
+                    text-decoration: none;
+                    font-weight: 700;
+                    font-size: 13px;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    transition: opacity 0.2s;
+                }}
+                .docs-btn:hover {{ opacity: 0.9; }}
                 
-                .dashboard {{ display: flex; gap: 20px; flex-wrap: wrap; }}
-                .device-card {{ flex: 1; min-width: 300px; background: #fafafa; border: 1px solid #ddd; border-radius: 8px; padding: 15px; }}
-                .device-card h3 {{ margin-top: 0; display: flex; justify-content: space-between; }}
-                .badge {{ padding: 4px 8px; border-radius: 12px; font-size: 12px; color: white; }}
-                .badge.master {{ background: #28a745; }}
-                .badge.backup {{ background: #6c757d; }}
-                .badge.offline {{ background: #dc3545; }}
-                .stat-row {{ display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee; }}
-                .stat-row:last-child {{ border-bottom: none; }}
-                .stat-label {{ font-weight: bold; color: #555; }}
+                .summary-banner {{
+                    background: var(--card-bg);
+                    border: 1px solid var(--border);
+                    border-radius: 12px;
+                    padding: 16px 20px;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    flex-wrap: wrap;
+                    gap: 12px;
+                    margin-bottom: 24px;
+                }}
+                .summary-item {{ display: flex; flex-direction: column; }}
+                .summary-label {{ font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--text-sub); text-transform: uppercase; }}
+                .summary-value {{ font-size: 15px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 6px; }}
+                
+                .pulse-dot {{
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 50%;
+                    background: var(--emerald);
+                    box-shadow: 0 0 10px var(--emerald);
+                    animation: pulse 2s infinite;
+                }}
+                @keyframes pulse {{
+                    0% {{ transform: scale(0.95); opacity: 0.8; }}
+                    50% {{ transform: scale(1.3); opacity: 1; }}
+                    100% {{ transform: scale(0.95); opacity: 0.8; }}
+                }}
+                
+                .section-header {{
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 16px;
+                }}
+                .section-title {{
+                    font-size: 16px;
+                    font-weight: 700;
+                    letter-spacing: -0.01em;
+                    color: #fff;
+                }}
+                .sync-timer {{
+                    font-family: 'JetBrains Mono', monospace;
+                    font-size: 11px;
+                    color: var(--text-sub);
+                }}
+                
+                .dashboard-grid {{
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                    gap: 16px;
+                    margin-bottom: 28px;
+                }}
+                .node-card {{
+                    background: var(--card-bg);
+                    border: 1px solid var(--border);
+                    border-radius: 12px;
+                    padding: 20px;
+                    position: relative;
+                    transition: border-color 0.2s;
+                }}
+                .node-card.master {{ border-color: rgba(16, 185, 129, 0.4); }}
+                .node-card.phone {{ border-color: rgba(0, 243, 255, 0.4); }}
+                .node-card.offline {{ opacity: 0.7; border-color: rgba(244, 63, 94, 0.3); }}
+                
+                .card-header {{
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: flex-start;
+                    margin-bottom: 14px;
+                }}
+                .node-title {{
+                    font-size: 14px;
+                    font-weight: 700;
+                    color: #fff;
+                }}
+                .node-sub {{
+                    font-size: 11px;
+                    font-family: 'JetBrains Mono', monospace;
+                    color: var(--text-sub);
+                    margin-top: 2px;
+                }}
+                
+                .badge {{
+                    font-family: 'JetBrains Mono', monospace;
+                    font-size: 10px;
+                    font-weight: 700;
+                    padding: 3px 8px;
+                    border-radius: 999px;
+                    text-transform: uppercase;
+                }}
+                .badge.active {{ background: rgba(16, 185, 129, 0.15); color: var(--emerald); border: 1px solid rgba(16, 185, 129, 0.3); }}
+                .badge.standby {{ background: rgba(245, 158, 11, 0.15); color: var(--amber); border: 1px solid rgba(245, 158, 11, 0.3); }}
+                .badge.offline {{ background: rgba(244, 63, 94, 0.15); color: var(--rose); border: 1px solid rgba(244, 63, 94, 0.3); }}
+                
+                .metric-row {{
+                    display: flex;
+                    justify-content: space-between;
+                    font-size: 12px;
+                    padding: 6px 0;
+                    border-top: 1px solid rgba(255,255,255,0.05);
+                }}
+                .metric-label {{ color: var(--text-sub); }}
+                .metric-val {{ font-family: 'JetBrains Mono', monospace; color: #fff; text-align: right; }}
+                
+                .bar-container {{
+                    background: rgba(255,255,255,0.06);
+                    height: 5px;
+                    border-radius: 3px;
+                    overflow: hidden;
+                    margin-top: 4px;
+                }}
+                .bar-fill {{
+                    height: 100%;
+                    border-radius: 3px;
+                    background: var(--blue);
+                }}
+                .bar-fill.green {{ background: var(--emerald); }}
+                .bar-fill.amber {{ background: var(--amber); }}
+                .bar-fill.rose {{ background: var(--rose); }}
+                
+                .tunnel-link {{
+                    display: block;
+                    font-family: 'JetBrains Mono', monospace;
+                    font-size: 11px;
+                    color: var(--cyan);
+                    text-decoration: none;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    margin-top: 10px;
+                    padding: 6px 10px;
+                    background: rgba(0, 243, 255, 0.05);
+                    border-radius: 6px;
+                    border: 1px dashed rgba(0, 243, 255, 0.2);
+                }}
+                .tunnel-link:hover {{ text-decoration: underline; }}
+                
+                .upload-container {{
+                    background: var(--card-bg);
+                    border: 1px solid var(--border);
+                    border-radius: 12px;
+                    padding: 24px;
+                }}
+                .upload-form {{ display: grid; gap: 14px; margin-top: 14px; }}
+                .form-control {{
+                    width: 100%;
+                    padding: 10px 14px;
+                    background: var(--bg-dark);
+                    border: 1px solid var(--border);
+                    border-radius: 8px;
+                    color: #fff;
+                    font-size: 13px;
+                    font-family: inherit;
+                }}
+                .form-control:focus {{ outline: none; border-color: var(--cyan); }}
+                .btn-submit {{
+                    background: linear-gradient(135deg, #00f3ff, #0088ff);
+                    color: #000;
+                    border: none;
+                    border-radius: 8px;
+                    padding: 12px;
+                    font-weight: 700;
+                    cursor: pointer;
+                    font-size: 13px;
+                    font-family: inherit;
+                    transition: opacity 0.2s;
+                }}
+                .btn-submit:hover {{ opacity: 0.9; }}
+                #result {{
+                    margin-top: 14px;
+                    font-family: 'JetBrains Mono', monospace;
+                    font-size: 12px;
+                    word-break: break-all;
+                }}
             </style>
         </head>
         <body>
             <div class="top-bar">
-                <h1 style="margin: 0; font-size: 24px;">⚡ Netuark Media Cluster</h1>
+                <div class="brand-title">
+                    ⚡ Netuark <span style="color:var(--cyan)">Media Cluster</span>
+                    <span class="brand-badge">HA v2.0</span>
+                </div>
                 <a href="/docs" class="docs-btn">📖 API Docs & SDKs</a>
             </div>
-            <div class="container">
-                <h2>Cluster Dashboard</h2>
-                <div class="dashboard" id="telemetry-dashboard">
-                    <p>Loading telemetry...</p>
+
+            <div class="summary-banner">
+                <div class="summary-item">
+                    <span class="summary-label">Cluster Status</span>
+                    <span class="summary-value" id="cluster-status-text">
+                        <span class="pulse-dot"></span> Active-Active Redundant Mesh
+                    </span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Production Edge Gateway</span>
+                    <span class="summary-value" style="font-family:'JetBrains Mono', monospace; font-size:13px; color:var(--cyan);">
+                        https://ntamediaserver.pages.dev
+                    </span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Telemetry Coordinator</span>
+                    <span class="summary-value" id="nodes-online-count" style="font-family:'JetBrains Mono', monospace; font-size:13px;">
+                        Scanning nodes...
+                    </span>
                 </div>
             </div>
-            
-            <div class="container">
-                <h2>Upload Media</h2>
-                <p>Files are mirrored automatically to all cluster nodes.</p>
-                <form id="uploadForm">
-                    <div class="form-group">
-                        <label>Target Folder / File Type</label>
-                        <select name="type">
-                            <option value="chat">Chat (Images/Audio)</option>
-                            <option value="feed">Feed (Images)</option>
-                            <option value="videos">Videos</option>
-                            <option value="docs">Documents (PDF, ZIP, etc)</option>
+
+            <div class="section-header">
+                <div class="section-title">Cluster Nodes & Live Hardware Vitals</div>
+                <div class="sync-timer" id="sync-timer">Auto-refresh: 5s</div>
+            </div>
+
+            <div class="dashboard-grid" id="telemetry-dashboard">
+                <div class="node-card">
+                    <p style="color:var(--text-sub); font-size:13px;">Connecting to telemetry coordinator and phone micro-nodes...</p>
+                </div>
+            </div>
+
+            <div class="upload-container">
+                <div class="section-title">Ingestion Test Console</div>
+                <p style="color:var(--text-sub); font-size:12px; margin-top:2px;">
+                    Uploaded assets are automatically mirrored across both cluster datacenters.
+                </p>
+                <form id="uploadForm" class="upload-form">
+                    <div>
+                        <label style="display:block; font-size:11px; font-family:'JetBrains Mono', monospace; color:var(--text-sub); margin-bottom:6px;">Target Folder / Media Type</label>
+                        <select name="type" class="form-control">
+                            <option value="chat">Chat (Images / Audio / Attachments)</option>
+                            <option value="feed">Feed (Images / Banners)</option>
+                            <option value="videos">Videos (Chunked Streaming)</option>
+                            <option value="docs">Documents (PDF / Archive / Text)</option>
                         </select>
                     </div>
-                    <div class="form-group">
-                        <label>File</label>
-                        <input type="file" name="file" required />
+                    <div>
+                        <label style="display:block; font-size:11px; font-family:'JetBrains Mono', monospace; color:var(--text-sub); margin-bottom:6px;">Choose File</label>
+                        <input type="file" name="file" class="form-control" required />
                     </div>
-                    <button type="submit">Upload</button>
+                    <button type="submit" class="btn-submit">Upload to Media Cluster</button>
                 </form>
                 <div id="result"></div>
             </div>
-            
+
             <script>
-                const SYNC_URL = "{SYNC_URL}";
-                
-                async function fetchTelemetry() {{
-                    if (!SYNC_URL) {{
-                        document.getElementById('telemetry-dashboard').innerHTML = '<p style="color:red">SYNC_FIRESTORE_URL is not configured in auto_tunnel.py</p>';
-                        return;
-                    }}
-                    
+                const SYNC_URL = "{SYNC_URL}" || "https://firestore.googleapis.com/v1/projects/ntamedia-1f03d/databases/(default)/documents/serverSync/coordinator";
+                const PHONE_NODE_URL = "https://phone-whisper-server.pages.dev/telemetry";
+
+                function formatAgo(timestampStr) {{
+                    if (!timestampStr) return "Never";
+                    const diff = Math.floor((Date.now() - new Date(timestampStr).getTime()) / 1000);
+                    if (diff < 5) return "Just now";
+                    if (diff < 60) return diff + "s ago";
+                    if (diff < 3600) return Math.floor(diff / 60) + "m ago";
+                    return Math.floor(diff / 3600) + "h ago";
+                }}
+
+                function parsePct(usedStr, totalStr) {{
+                    const u = parseFloat(usedStr) || 0;
+                    const t = parseFloat(totalStr) || 1;
+                    return Math.min(100, Math.round((u / t) * 100));
+                }}
+
+                async function fetchAllTelemetry() {{
+                    const dashboardEl = document.getElementById('telemetry-dashboard');
+                    let cardsHtml = '';
+                    let onlineCount = 0;
+
+                    // ── 1. Fetch Sovereign Phone AI Datacenter (Redmi 9i ARM64 micro-node) ──
                     try {{
-                        const res = await fetch(SYNC_URL);
-                        const data = await res.json();
-                        const fields = data.fields || {{}};
-                        const masterId = fields.master_id ? fields.master_id.stringValue : 'Unknown';
-                        
-                        let html = '';
-                        
-                        // Look for all telemetry fields (telemetry_DEVICEID)
-                        for (const key in fields) {{
-                            if (key.startsWith('telemetry_')) {{
-                                const deviceId = key.replace('telemetry_', '');
-                                let tel = {{}};
-                                try {{
-                                    tel = JSON.parse(fields[key].stringValue);
-                                }} catch(e) {{}}
-                                
-                                const isMaster = (deviceId === masterId);
-                                
-                                // Calculate age
-                                let lastUpdatedStr = null;
-                                if (isMaster) {{
-                                    lastUpdatedStr = fields.last_updated ? fields.last_updated.timestampValue : null;
-                                }} else {{
-                                    const backupKey = `backup_updated_${{deviceId}}`;
-                                    lastUpdatedStr = fields[backupKey] ? fields[backupKey].timestampValue : null;
-                                }}
-                                
-                                let isOffline = false;
-                                if (lastUpdatedStr) {{
-                                    const lastUpdatedDate = new Date(lastUpdatedStr);
-                                    const now = new Date();
-                                    const ageSeconds = (now - lastUpdatedDate) / 1000;
-                                    if (ageSeconds > 60) {{
-                                        isOffline = true;
-                                    }}
-                                }} else {{
-                                    isOffline = true;
-                                }}
-                                
-                                let badgeClass = isMaster ? 'master' : 'backup';
-                                let badgeText = isMaster ? 'MASTER (Active)' : 'BACKUP (Standby)';
-                                
-                                if (isOffline) {{
-                                    badgeClass = 'offline';
-                                    badgeText = 'OFFLINE (Action Required!)';
-                                }}
-                                
-                                html += `
-                                <div class="device-card">
-                                    <h3>Device: ${{deviceId}} <span class="badge ${{badgeClass}}">${{badgeText}}</span></h3>
-                                    <div class="stat-row"><span class="stat-label">Battery</span><span>${{tel.battery || 'N/A'}}</span></div>
-                                    <div class="stat-row"><span class="stat-label">Network</span><span>${{tel.network || 'N/A'}}</span></div>
-                                    <div class="stat-row"><span class="stat-label">RAM</span><span>${{tel.ram || 'N/A'}}</span></div>
-                                    <div class="stat-row"><span class="stat-label">Storage</span><span>${{tel.storage || 'N/A'}}</span></div>
+                        const phoneRes = await fetch(PHONE_NODE_URL, {{ signal: AbortSignal.timeout(4000) }});
+                        if (phoneRes.ok) {{
+                            const p = await phoneRes.json();
+                            onlineCount++;
+                            const ramPct = parsePct(p.memory?.used_mb, p.memory?.total_mb);
+                            const storUsed = (p.storage?.total_gb - p.storage?.free_gb).toFixed(1);
+                            const storPct = parsePct(storUsed, p.storage?.total_gb);
+                            const ramColor = ramPct > 85 ? 'rose' : (ramPct > 70 ? 'amber' : 'green');
+                            const storColor = storPct > 85 ? 'rose' : (storPct > 70 ? 'amber' : 'green');
+
+                            cardsHtml += `
+                            <div class="node-card phone">
+                                <div class="card-header">
+                                    <div>
+                                        <div class="node-title">${{p.device?.model || 'Redmi 9i (Phone Node)'}}</div>
+                                        <div class="node-sub">${{p.device?.arch || 'ARM64 Cortex-A53'}} &bull; Node 1</div>
+                                    </div>
+                                    <span class="badge active">● ONLINE</span>
                                 </div>
-                                `;
+                                <div class="metric-row">
+                                    <span class="metric-label">Role</span>
+                                    <span class="metric-val" style="color:var(--cyan)">Sovereign Phone AI & Storage</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Battery</span>
+                                    <span class="metric-val">${{p.battery?.level || 0}}% (${{p.battery?.status || 'Active'}}, ${{p.battery?.temperature || 32}}°C)</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">CPU / Cores</span>
+                                    <span class="metric-val">${{p.cpu?.usage_percent || 0}}% (${{p.cpu?.cores || 8}} Cores)</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">RAM Usage</span>
+                                    <span class="metric-val">${{p.memory?.used_mb || 0}} / ${{p.memory?.total_mb || 0}} MB (${{ramPct}}%)</span>
+                                </div>
+                                <div class="bar-container"><div class="bar-fill ${{ramColor}}" style="width:${{ramPct}}%"></div></div>
+                                <div class="metric-row" style="margin-top:6px;">
+                                    <span class="metric-label">Internal Flash</span>
+                                    <span class="metric-val">${{storUsed}} / ${{p.storage?.total_gb || 0}} GB (${{storPct}}%)</span>
+                                </div>
+                                <div class="bar-container"><div class="bar-fill ${{storColor}}" style="width:${{storPct}}%"></div></div>
+                                <a href="https://phone-whisper-server.pages.dev" target="_blank" class="tunnel-link">
+                                    🌐 https://phone-whisper-server.pages.dev
+                                </a>
+                            </div>`;
+                        }}
+                    }} catch (err) {{
+                        console.warn('Phone node telemetry offline or slow:', err);
+                    }}
+
+                    // ── 2. Fetch Coordinator (NTA Master & Backup Nodes) ──
+                    try {{
+                        const coordRes = await fetch(SYNC_URL, {{ signal: AbortSignal.timeout(4000) }});
+                        if (coordRes.ok) {{
+                            const coordData = await coordRes.json();
+                            const fields = coordData.fields || {{}};
+                            const masterId = fields.master_id ? fields.master_id.stringValue : '';
+                            const lastMasterUpdate = fields.last_updated ? fields.last_updated.timestampValue : null;
+
+                            for (const key in fields) {{
+                                if (key.startsWith('telemetry_')) {{
+                                    const devId = key.replace('telemetry_', '');
+                                    const isMaster = (devId === masterId);
+                                    let tel = {{}};
+                                    try {{ tel = JSON.parse(fields[key].stringValue); }} catch(_) {{}}
+
+                                    const backupKey = `backup_updated_${{devId}}`;
+                                    const devUpdateStr = isMaster ? lastMasterUpdate : (fields[backupKey] ? fields[backupKey].timestampValue : null);
+                                    const peerKey = `peer_url_${{devId}}`;
+                                    const peerUrl = fields[peerKey] ? fields[peerKey].stringValue : '';
+
+                                    // Determine health
+                                    let isAlive = false;
+                                    if (devUpdateStr) {{
+                                        const ageSec = (Date.now() - new Date(devUpdateStr).getTime()) / 1000;
+                                        isAlive = (ageSec < 45);
+                                    }}
+                                    if (isAlive) onlineCount++;
+
+                                    const badgeClass = isAlive ? (isMaster ? 'active' : 'standby') : 'offline';
+                                    const badgeText = isAlive ? (isMaster ? '● MASTER' : '● STANDBY') : '● OFFLINE';
+
+                                    // Parse RAM & Storage strings like "1278MB / 1794MB Used"
+                                    const ramMatches = (tel.ram || '').match(/(\\d+)\\s*MB\\s*\\/\\s*(\\d+)\\s*MB/i);
+                                    const ramPct = ramMatches ? parsePct(ramMatches[1], ramMatches[2]) : 50;
+                                    const storMatches = (tel.storage || '').match(/(\\d+)\\s*G\\s*\\/\\s*(\\d+)\\s*G/i);
+                                    const storPct = storMatches ? parsePct(storMatches[1], storMatches[2]) : 50;
+
+                                    cardsHtml += `
+                                    <div class="node-card ${{isMaster ? 'master' : (isAlive ? '' : 'offline')}}">
+                                        <div class="card-header">
+                                            <div>
+                                                <div class="node-title">Cluster Device: ${{devId}}</div>
+                                                <div class="node-sub">${{isMaster ? 'Master Ingestion Node' : 'Backup Sync Replica'}}</div>
+                                            </div>
+                                            <span class="badge ${{badgeClass}}">${{badgeText}}</span>
+                                        </div>
+                                        <div class="metric-row">
+                                            <span class="metric-label">Heartbeat</span>
+                                            <span class="metric-val">${{formatAgo(devUpdateStr)}}</span>
+                                        </div>
+                                        <div class="metric-row">
+                                            <span class="metric-label">RAM Condition</span>
+                                            <span class="metric-val">${{tel.ram || 'Available'}}</span>
+                                        </div>
+                                        <div class="bar-container"><div class="bar-fill green" style="width:${{ramPct}}%"></div></div>
+                                        <div class="metric-row" style="margin-top:6px;">
+                                            <span class="metric-label">Storage Condition</span>
+                                            <span class="metric-val">${{tel.storage || 'Mounted'}}</span>
+                                        </div>
+                                        <div class="bar-container"><div class="bar-fill blue" style="width:${{storPct}}%"></div></div>
+                                        ${{peerUrl ? `<a href="${{peerUrl}}" target="_blank" class="tunnel-link">⚡ ${{peerUrl}}</a>` : ''}}
+                                    </div>`;
+                                }}
                             }}
                         }}
-                        
-                        if (html === '') html = '<p>No telemetry data found yet. Make sure auto_tunnel.py is running on the phones.</p>';
-                        document.getElementById('telemetry-dashboard').innerHTML = html;
-                        
-                    }} catch (e) {{
-                        console.error(e);
+                    }} catch (cErr) {{
+                        console.warn('Coordinator telemetry offline:', cErr);
+                    }}
+
+                    if (cardsHtml === '') {{
+                        cardsHtml = '<div class="node-card"><p style="color:var(--rose)">Unable to connect to telemetry endpoints. Retrying automatically...</p></div>';
+                    }}
+
+                    dashboardEl.innerHTML = cardsHtml;
+                    const onlineCountEl = document.getElementById('nodes-online-count');
+                    if (onlineCountEl) {{
+                        onlineCountEl.innerHTML = `<span style="color:var(--emerald)">${{onlineCount}} Nodes Active</span>`;
                     }}
                 }}
-                
-                // Fetch immediately and then every 5 seconds
-                fetchTelemetry();
-                setInterval(fetchTelemetry, 5000);
 
+                fetchAllTelemetry();
+                setInterval(fetchAllTelemetry, 5000);
+
+                // Upload test handler
                 document.getElementById('uploadForm').addEventListener('submit', async (e) => {{
                     e.preventDefault();
                     const formData = new FormData(e.target);
                     const resultDiv = document.getElementById('result');
-                    resultDiv.innerHTML = 'Uploading...';
+                    resultDiv.innerHTML = '<span style="color:var(--cyan)">Transferring to media cluster...</span>';
                     try {{
                         const res = await fetch('/upload', {{ method: 'POST', body: formData }});
                         const data = await res.json();
                         if (res.ok) {{
-                            resultDiv.innerHTML = '<span style="color:green;">Success!</span><br>File URL: <a href="' + data.fileUrl + '" target="_blank">' + data.fileUrl + '</a>';
+                            const fullUrl = window.location.origin + data.fileUrl;
+                            resultDiv.innerHTML = '<span style="color:var(--emerald)">✅ Upload Succeeded!</span><br>Live CDN URL: <a href="' + data.fileUrl + '" target="_blank" style="color:var(--cyan);text-decoration:underline;">' + fullUrl + '</a>';
                         }} else {{
-                            resultDiv.innerHTML = '<span style="color:red;">Error: ' + (data.error || 'Upload failed') + '</span>';
+                            resultDiv.innerHTML = '<span style="color:var(--rose)">❌ Upload Failed: ' + (data.error || 'Server error') + '</span>';
                         }}
                     }} catch (err) {{
-                        resultDiv.innerHTML = '<span style="color:red;">Error: ' + err.message + '</span>';
+                        resultDiv.innerHTML = '<span style="color:var(--rose)">❌ Network Error: ' + err.message + '</span>';
                     }}
                 }});
             </script>

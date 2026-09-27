@@ -137,6 +137,14 @@
                 <span>PUT /v1/storage/...</span>
                 <span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">REST</span>
               </a>
+              <a href="#delete-media" class="block px-3 py-2 rounded-lg text-slate-300 hover:text-neonrose hover:bg-surface transition flex items-center justify-between">
+                <span>DELETE /media/...</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">DEL</span>
+              </a>
+              <a href="#delete-rest" class="block px-3 py-2 rounded-lg text-slate-300 hover:text-neonrose hover:bg-surface transition flex items-center justify-between">
+                <span>DELETE /v1/storage/...</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">REST</span>
+              </a>
               <a href="#sync-list" class="block px-3 py-2 rounded-lg text-slate-300 hover:text-neoncyan hover:bg-surface transition flex items-center justify-between">
                 <span>GET /api/sync/list</span>
                 <span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">JSON</span>
@@ -497,6 +505,122 @@ func uploadMedia(fileData: Data, fileName: String, type: String = "feed") async 
             <pre class="p-4 text-xs font-mono text-slate-300 overflow-x-auto"><code>curl -X PUT https://ntamediaserver.pages.dev/v1/storage/objects/avatars/user_102.png \
   -H "Content-Type: image/png" \
   --data-binary "@avatar.png"</code></pre>
+          </div>
+        </section>
+
+        <!-- Endpoint: DELETE /media/<folder>/<filename> -->
+        <section id="delete-media" class="bg-cardbg rounded-2xl p-6 sm:p-8 border border-cardborder space-y-6">
+          <div class="flex flex-wrap items-center justify-between gap-3 border-b border-cardborder pb-4">
+            <div class="flex items-center gap-3">
+              <span class="px-2.5 py-1 rounded-md bg-rose-500/10 text-rose-400 border border-rose-500/20 font-mono text-sm font-bold">DELETE</span>
+              <h2 class="text-lg sm:text-xl font-bold font-mono text-white">/media/{folder}/{filename}</h2>
+            </div>
+            <span class="text-xs font-mono text-rose-400 bg-rose-500/10 px-2.5 py-1 rounded border border-rose-500/20">Standard Media Route</span>
+          </div>
+
+          <p class="text-slate-300 text-sm leading-relaxed">
+            Deletes a media file locally from the active storage node and automatically broadcasts/propagates the deletion to all peer nodes across the cluster.
+          </p>
+
+          <h3 class="text-xs font-mono uppercase tracking-wider text-slate-400 font-bold">Format & cURL Examples</h3>
+
+          <div class="rounded-xl bg-obsidian border border-cardborder overflow-hidden">
+            <div class="flex items-center justify-between px-4 py-2 bg-surface border-b border-cardborder">
+              <span class="text-xs font-mono text-slate-400">cURL Example</span>
+              <button onclick="copyPreCode(this)" class="text-xs font-mono text-slate-400 hover:text-white"><i class="fa-regular fa-copy"></i></button>
+            </div>
+            <pre class="p-4 text-xs font-mono text-slate-300 overflow-x-auto"><code># Format:
+curl -X DELETE "https://ntamediaserver.pages.dev/media/&lt;folder&gt;/&lt;filename&gt;"
+
+# Example (deleting a video):
+curl -X DELETE "https://ntamediaserver.pages.dev/media/videos/1727400000_myvideo.mp4"</code></pre>
+          </div>
+
+          <h3 class="text-xs font-mono uppercase tracking-wider text-slate-400 font-bold">Client Integration</h3>
+          <div class="rounded-xl bg-obsidian border border-cardborder overflow-hidden" data-tabs>
+            <div class="flex items-center justify-between px-3 py-2 bg-surface border-b border-cardborder overflow-x-auto">
+              <div class="flex items-center space-x-1">
+                <button onclick="switchTab(this, 'tab-js-del-media')" class="tab-btn px-3 py-1 rounded text-xs font-mono text-neoncyan bg-cardbg border border-cardborder">JavaScript</button>
+                <button onclick="switchTab(this, 'tab-py-del-media')" class="tab-btn px-3 py-1 rounded text-xs font-mono text-slate-400 hover:text-white">Python</button>
+              </div>
+              <button onclick="copyPreCode(this)" class="text-xs font-mono text-slate-400 hover:text-white px-2 py-1"><i class="fa-regular fa-copy"></i></button>
+            </div>
+            <div id="tab-js-del-media" class="tab-content p-4 text-xs font-mono text-slate-300 leading-relaxed overflow-x-auto">
+              <pre><code>async function deleteMedia(folder, filename) {
+  const res = await fetch(`https://ntamediaserver.pages.dev/media/${folder}/${filename}`, {
+    method: 'DELETE'
+  });
+  const data = await res.json();
+  if (!res.ok && res.status !== 404) throw new Error(data.error || 'Delete failed');
+  return data; // { message: "File deleted successfully" }
+}</code></pre>
+            </div>
+            <div id="tab-py-del-media" class="tab-content hidden p-4 text-xs font-mono text-slate-300 leading-relaxed overflow-x-auto">
+              <pre><code>import requests
+
+def delete_media(folder: str, filename: str):
+    url = f"https://ntamediaserver.pages.dev/media/{folder}/{filename}"
+    res = requests.delete(url)
+    return res.json()</code></pre>
+            </div>
+          </div>
+        </section>
+
+        <!-- Endpoint: DELETE /v1/storage/objects/<folder>/<filename> -->
+        <section id="delete-rest" class="bg-cardbg rounded-2xl p-6 sm:p-8 border border-cardborder space-y-6">
+          <div class="flex flex-wrap items-center justify-between gap-3 border-b border-cardborder pb-4">
+            <div class="flex items-center gap-3">
+              <span class="px-2.5 py-1 rounded-md bg-rose-500/10 text-rose-400 border border-rose-500/20 font-mono text-sm font-bold">DELETE</span>
+              <h2 class="text-lg sm:text-xl font-bold font-mono text-white">/v1/storage/objects/{folder}/{filename}</h2>
+            </div>
+            <span class="text-xs font-mono text-purple-400 bg-purple-500/10 px-2.5 py-1 rounded border border-purple-500/20">REST API Route</span>
+          </div>
+
+          <p class="text-slate-300 text-sm leading-relaxed">
+            Standard RESTful object deletion endpoint. If your app uses the standard REST path for storage, use this route to delete objects by exact path with automatic cluster propagation.
+          </p>
+
+          <h3 class="text-xs font-mono uppercase tracking-wider text-slate-400 font-bold">Format & cURL Examples</h3>
+
+          <div class="rounded-xl bg-obsidian border border-cardborder overflow-hidden">
+            <div class="flex items-center justify-between px-4 py-2 bg-surface border-b border-cardborder">
+              <span class="text-xs font-mono text-slate-400">cURL Example</span>
+              <button onclick="copyPreCode(this)" class="text-xs font-mono text-slate-400 hover:text-white"><i class="fa-regular fa-copy"></i></button>
+            </div>
+            <pre class="p-4 text-xs font-mono text-slate-300 overflow-x-auto"><code># Format:
+curl -X DELETE "https://ntamediaserver.pages.dev/v1/storage/objects/&lt;folder&gt;/&lt;filename&gt;"
+
+# Example (deleting a chat image):
+curl -X DELETE "https://ntamediaserver.pages.dev/v1/storage/objects/chat/1727400000_image.jpg"</code></pre>
+          </div>
+
+          <h3 class="text-xs font-mono uppercase tracking-wider text-slate-400 font-bold">Client Integration</h3>
+          <div class="rounded-xl bg-obsidian border border-cardborder overflow-hidden" data-tabs>
+            <div class="flex items-center justify-between px-3 py-2 bg-surface border-b border-cardborder overflow-x-auto">
+              <div class="flex items-center space-x-1">
+                <button onclick="switchTab(this, 'tab-js-del-rest')" class="tab-btn px-3 py-1 rounded text-xs font-mono text-neoncyan bg-cardbg border border-cardborder">JavaScript</button>
+                <button onclick="switchTab(this, 'tab-py-del-rest')" class="tab-btn px-3 py-1 rounded text-xs font-mono text-slate-400 hover:text-white">Python</button>
+              </div>
+              <button onclick="copyPreCode(this)" class="text-xs font-mono text-slate-400 hover:text-white px-2 py-1"><i class="fa-regular fa-copy"></i></button>
+            </div>
+            <div id="tab-js-del-rest" class="tab-content p-4 text-xs font-mono text-slate-300 leading-relaxed overflow-x-auto">
+              <pre><code>async function deleteRestObject(folder, filename) {
+  const res = await fetch(`https://ntamediaserver.pages.dev/v1/storage/objects/${folder}/${filename}`, {
+    method: 'DELETE'
+  });
+  const data = await res.json();
+  if (!res.ok && res.status !== 404) throw new Error(data.error || 'Delete failed');
+  return data; // { success: true, message: "File deleted successfully" }
+}</code></pre>
+            </div>
+            <div id="tab-py-del-rest" class="tab-content hidden p-4 text-xs font-mono text-slate-300 leading-relaxed overflow-x-auto">
+              <pre><code>import requests
+
+def delete_rest_object(folder: str, filename: str):
+    url = f"https://ntamediaserver.pages.dev/v1/storage/objects/{folder}/{filename}"
+    res = requests.delete(url)
+    return res.json()</code></pre>
+            </div>
           </div>
         </section>
 

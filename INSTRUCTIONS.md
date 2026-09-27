@@ -35,10 +35,21 @@ All requests go to `https://ntamediaserver.pages.dev`. No auth required.
 | :--- | :--- | :--- |
 | `POST` | `/upload` | Upload a file. Form fields: `file` (binary), `type` (`feed` \| `chat` \| `videos` \| `docs`) |
 | `GET` | `/media/<type>/<filename>` | Serve a media file |
-| `PUT` | `/v1/storage/objects/<folder>/<filename>` | REST upload (raw body) |
+| `DELETE` | `/media/<folder>/<filename>` | Delete a media file locally and broadcast deletion across cluster |
+| `PUT` | `/v1/storage/objects/<folder>/<filename>` | REST upload (raw binary body) |
 | `GET` | `/v1/storage/objects/<folder>/<filename>` | REST serve |
+| `DELETE` | `/v1/storage/objects/<folder>/<filename>` | REST delete object and broadcast across cluster |
 | `GET` | `/api/sync/list` | Returns JSON map of all files + sizes (used for inter-device sync) |
 | `GET` | `/register_tunnel` | Returns currently active tunnel origin |
+
+**Delete File Examples:**
+```bash
+# Standard Media Route:
+curl -X DELETE "https://ntamediaserver.pages.dev/media/videos/1727400000_myvideo.mp4"
+
+# REST Storage Route:
+curl -X DELETE "https://ntamediaserver.pages.dev/v1/storage/objects/chat/1727400000_image.jpg"
+```
 
 **Storage folders:**
 
