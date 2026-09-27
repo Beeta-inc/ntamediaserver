@@ -137,6 +137,31 @@ export async function handleRequest(context) {
     }
   }
 
+  const isStorageReq = url.pathname.startsWith("/v1/storage/objects/") || url.pathname.startsWith("/media/") || url.pathname.startsWith("/s/");
+
+  // ⚡ Try Peer Node (Sovereign Phone Datacenter) if local server returned 404 or is reconnecting
+  if (isStorageReq && (!response || [404, 502, 503, 504, 530].includes(response.status))) {
+    try {
+      const peerUrl = `https://phone-whisper-server.pages.dev${url.pathname}${url.search}`;
+      const peerRes = await fetch(new Request(peerUrl, {
+        method: request.method,
+        headers: request.headers,
+        body: reqBody instanceof ArrayBuffer ? reqBody.slice(0) : reqBody
+      }));
+      if (peerRes && [200, 206].includes(peerRes.status)) {
+        const peerRespHeaders = new Headers(peerRes.headers);
+        Object.entries(CORS_HEADERS).forEach(([k, v]) => peerRespHeaders.set(k, v));
+        peerRespHeaders.set("Cache-Control", "public, max-age=2592000, s-maxage=2592000, immutable");
+        peerRespHeaders.set("Accept-Ranges", "bytes");
+        return new Response(request.method === "HEAD" ? null : peerRes.body, {
+          status: peerRes.status,
+          statusText: peerRes.statusText,
+          headers: peerRespHeaders
+        });
+      }
+    } catch (_) {}
+  }
+
   if (!response || [502, 503, 504, 530].includes(response.status)) {
     return new Response(JSON.stringify({ status: "reconnecting", retry_after_sec: 3 }), {
       status: 503,

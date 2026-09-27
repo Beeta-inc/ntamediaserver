@@ -174,6 +174,12 @@ def update_sync_state(role):
         print(f"[!] Warning: Failed to update secondary Firebase: {e}")
 
 def update_main_firebase(url):
+    # Guard: Never overwrite main Firebase with ephemeral trycloudflare.com tunnels!
+    # The NeTuArk Web Platform requires the permanent Cloudflare Pages Edge (https://phone-whisper-server.pages.dev).
+    if "trycloudflare.com" in (url or ""):
+        print(f"\n[*] Preserving permanent edge domain in MAIN Firebase (ignoring ephemeral tunnel: {url})\n", flush=True)
+        return
+
     data = {
         "fields": {
             "url": {"stringValue": url},
@@ -185,9 +191,9 @@ def update_main_firebase(url):
         req = urllib.request.Request(patch_url, data=json.dumps(data).encode('utf-8'), method='PATCH')
         req.add_header('Content-Type', 'application/json')
         urllib.request.urlopen(req, timeout=5)
-        print(f"\n[+] Successfully updated MAIN Firebase with new URL: {url}\n")
+        print(f"\n[+] Successfully updated MAIN Firebase with new URL: {url}\n", flush=True)
     except Exception as e:
-        print(f"\n[-] Failed to update MAIN Firebase: {e}\n")
+        print(f"\n[-] Failed to update MAIN Firebase: {e}\n", flush=True)
 
 import threading
 
@@ -224,49 +230,68 @@ def start_tunnel():
     t.daemon = True
     t.start()
 
-def _download_sync_file(master_url, folder, f, local_path):
-    print(f"[*] Built-in Sync: Downloading missing file {folder}/{f}")
-    try:
-        dl_req = urllib.request.Request(f"{master_url}/media/{folder}/{f}")
-        with urllib.request.urlopen(dl_req, timeout=60) as dl_res:
-            with open(local_path, 'wb') as out_f:
-                out_f.write(dl_res.read())
-    except Exception as e:
-        print(f"[-] Sync error for {f}: {e}")
+def _download_sync_file(peer_url, folder, f, local_path):
+    print(f"[*] Built-in Sync: Downloading missing file {folder}/{f} from {peer_url}")
+    candidate_urls = [
+        f"{peer_url}/v1/storage/objects/{folder}/{f}",
+        f"{peer_url}/media/{folder}/{f}",
+        f"{peer_url}/v1/storage/objects/media/{f}"
+    ]
+    for dl_url in candidate_urls:
+        try:
+            dl_req = urllib.request.Request(dl_url, headers={"User-Agent": "NTA-Sync/2.0"})
+            with urllib.request.urlopen(dl_req, timeout=30) as dl_res:
+                if dl_res.status == 200:
+                    tmp_p = local_path + ".tmp"
+                    with open(tmp_p, 'wb') as out_f:
+                        out_f.write(dl_res.read())
+                    os.replace(tmp_p, local_path)
+                    print(f"[+] Built-in Sync: Successfully saved {folder}/{f}")
+                    return
+        except Exception:
+            continue
 
 def sync_files_loop():
     BASE_DIR = '/sdcard/Download/NetuarkMedia'
     while True:
         try:
-            state = get_sync_state()
-            if state and state.get('master_id') and state.get('master_id') != DEVICE_ID:
-                master_id = state.get('master_id')
-                master_peer_url = state.get(f'peer_url_{master_id}')
-                
-                if master_peer_url:
-                    list_req = urllib.request.Request(f"{master_peer_url}/api/sync/list")
+            state = get_sync_state() or {}
+            
+            # Symmetrical Mesh: Check both permanent peer and dynamic coordinator peers
+            peer_candidates = ["https://phone-whisper-server.pages.dev"]
+            for k, val in state.items():
+                if k.startswith('peer_url_') and k != f'peer_url_{DEVICE_ID}':
+                    if val and val.startswith('https://') and val not in peer_candidates:
+                        peer_candidates.append(val.rstrip('/'))
+                        
+            for peer_url in peer_candidates:
+                try:
+                    list_req = urllib.request.Request(f"{peer_url}/api/sync/list", headers={"User-Agent": "NTA-Sync/2.0"})
                     with urllib.request.urlopen(list_req, timeout=10) as list_res:
-                        master_files = json.loads(list_res.read().decode())
+                        peer_files = json.loads(list_res.read().decode())
                         
                     download_tasks = []
-                    for folder, files in master_files.items():
+                    for folder, files in peer_files.items():
+                        if not isinstance(files, dict):
+                            continue
                         local_dir = os.path.join(BASE_DIR, folder)
                         os.makedirs(local_dir, exist_ok=True)
                         for f, size in files.items():
                             local_path = os.path.join(local_dir, f)
                             if not os.path.exists(local_path) or os.path.getsize(local_path) != size:
-                                download_tasks.append((master_peer_url, folder, f, local_path))
+                                download_tasks.append((peer_url, folder, f, local_path))
                     
                     if download_tasks:
-                        print(f"[*] Built-in Sync: Found {len(download_tasks)} missing files. Downloading concurrently...")
-                        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-                            futures = [executor.submit(_download_sync_file, *task) for task in download_tasks]
+                        print(f"[*] Built-in Sync: Found {len(download_tasks)} missing files from {peer_url}. Downloading batch...")
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                            futures = [executor.submit(_download_sync_file, *task) for task in download_tasks[:10]]
                             concurrent.futures.wait(futures)
-                        print("[*] Built-in Sync: Download batch complete.")
+                        print("[*] Built-in Sync: Batch download complete.")
+                except Exception as peer_err:
+                    pass
         except Exception as e:
             pass
-        # Reduced sleep from 30s to 5s for much faster syncing while idle
-        time.sleep(5)
+        time.sleep(20)
 
 def run_coordinator():
     global current_process, last_pushed_url

@@ -586,37 +586,57 @@ def fallback_and_serve(target_dir, folder, filename):
         if os.path.exists(os.path.join(fallback_dir, filename)):
             return send_from_directory(fallback_dir, filename)
             
-    # P2P Fallback
+    # P2P Fallback to Counterpart Node (Redmi 9i Sovereign Micro-Datacenter)
     try:
         device_id = ""
         if os.path.exists('.device_id'):
             with open('.device_id', 'r') as f:
                 device_id = f.read().strip()
                 
-        req = urllib.request.Request("https://firestore.googleapis.com/v1/projects/ntamedia-1f03d/databases/(default)/documents/serverSync/coordinator")
-        with urllib.request.urlopen(req, timeout=5) as response:
-            data = json.loads(response.read().decode())
-            
-        peer_urls = []
-        for key, value in data.get('fields', {}).items():
-            if key.startswith('peer_url_') and key != f'peer_url_{device_id}':
-                peer_urls.append(value.get('stringValue'))
+        peer_urls = ["https://phone-whisper-server.pages.dev"]
+        try:
+            req = urllib.request.Request("https://firestore.googleapis.com/v1/projects/ntamedia-1f03d/databases/(default)/documents/serverSync/coordinator")
+            with urllib.request.urlopen(req, timeout=3) as response:
+                data = json.loads(response.read().decode())
+                for key, value in data.get('fields', {}).items():
+                    if key.startswith('peer_url_') and key != f'peer_url_{device_id}':
+                        p_val = value.get('stringValue')
+                        if p_val and p_val.startswith('https://') and p_val not in peer_urls:
+                            peer_urls.append(p_val.rstrip('/'))
+        except Exception:
+            pass
                 
+        candidate_paths = [
+            f"/v1/storage/objects/{folder}/{filename}",
+            f"/v1/storage/objects/media/{filename}",
+            f"/v1/storage/objects/avatars/{filename}",
+            f"/v1/storage/objects/stickers/{filename}",
+            f"/media/{folder}/{filename}",
+            f"/media/videos/{filename}",
+            f"/media/chat/{filename}",
+            f"/media/feed/{filename}",
+            f"/media/docs/{filename}",
+            f"/s/public/{filename}"
+        ]
+
         for peer in peer_urls:
-            try:
-                peer_file_url = f"{peer}/media/{folder}/{filename}"
-                print(f"[*] P2P Fallback: Fetching {filename} from {peer}")
-                dl_req = urllib.request.Request(peer_file_url)
-                with urllib.request.urlopen(dl_req, timeout=10) as dl_res:
-                    if dl_res.status == 200:
-                        with open(file_path, 'wb') as out_f:
-                            out_f.write(dl_res.read())
-                        print(f"[+] Successfully downloaded {filename} from peer!")
-                        return send_from_directory(target_dir, filename)
-            except Exception as e:
-                print(f"[-] Peer fetch failed for {peer}: {e}")
+            for c_path in candidate_paths:
+                try:
+                    peer_file_url = f"{peer}{c_path}"
+                    dl_req = urllib.request.Request(peer_file_url, headers={"User-Agent": "NTA-MediaServer/MeshSync"})
+                    with urllib.request.urlopen(dl_req, timeout=8) as dl_res:
+                        if dl_res.status == 200:
+                            os.makedirs(target_dir, exist_ok=True)
+                            tmp_file = file_path + ".tmp"
+                            with open(tmp_file, 'wb') as out_f:
+                                out_f.write(dl_res.read())
+                            os.replace(tmp_file, file_path)
+                            print(f"[+] Successfully downloaded {filename} from peer {peer} ({c_path})!")
+                            return send_from_directory(target_dir, filename)
+                except Exception:
+                    continue
     except Exception as e:
-        print(f"Failed to get peer URLs: {e}")
+        print(f"Failed in P2P fallback: {e}")
             
     # If all fails, let Flask return a standard 404
     return send_from_directory(target_dir, filename)
