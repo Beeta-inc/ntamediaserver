@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en" class="dark scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Netuark Media Server — Developer API & SDK Documentation</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            obsidian: '#04070d',
+            surface: '#0a0f19',
+            cardbg: '#0f172a',
+            cardborder: '#1e293b',
+            hoverborder: '#334155',
+            neoncyan: '#00f3ff',
+            neonblue: '#3b82f6',
+            neonemerald: '#10b981',
+            neonpurple: '#a855f7',
+            neonamber: '#f59e0b',
+            neonrose: '#f43f5e'
+          },
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+            grotesk: ['"Space Grotesk"', 'sans-serif']
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #04070d; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #334155; }
+    
+    .glow-cyan { text-shadow: 0 0 16px rgba(0, 243, 255, 0.4); }
+    .glow-emerald { text-shadow: 0 0 16px rgba(16, 185, 129, 0.4); }
+    .glow-purple { text-shadow: 0 0 16px rgba(168, 85, 247, 0.4); }
+    
+    .bg-grid-pattern {
+      background-size: 32px 32px;
+      background-image: linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                        linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    }
+  </style>
+</head>
+<body class="bg-obsidian text-slate-200 font-sans antialiased min-h-screen selection:bg-neoncyan selection:text-black">
+
+  <!-- Header -->
+  <header class="sticky top-0 z-50 backdrop-blur-xl bg-obsidian/80 border-b border-cardborder">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="h-9 w-9 rounded-lg bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center text-black font-black text-xl shadow-lg shadow-cyan-500/20">
+          ⚡
+        </div>
+        <div>
+          <a href="/" class="font-grotesk font-bold text-lg tracking-tight text-white flex items-center gap-2">
+            Netuark <span class="text-neoncyan">Media Server</span>
+            <span class="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-cyan-500/10 text-neoncyan border border-cyan-500/20">v2.0 Public API</span>
+          </a>
+        </div>
+      </div>
+      
+      <div class="flex items-center space-x-4">
+        <a href="/" class="text-xs font-mono text-slate-400 hover:text-white px-3 py-1.5 rounded-md hover:bg-cardbg border border-transparent hover:border-cardborder transition">
+          <i class="fa-solid fa-gauge mr-1.5"></i> Dashboard
+        </a>
+        <a href="https://github.com/Beeta-inc/ntamediaserver" target="_blank" class="text-xs font-mono text-slate-300 hover:text-neoncyan px-3 py-1.5 rounded-md bg-cardbg border border-cardborder hover:border-neoncyan/40 transition flex items-center gap-1.5">
+          <i class="fa-brands fa-github"></i> GitHub
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <div class="relative overflow-hidden bg-grid-pattern border-b border-cardborder">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16">
+      <div class="max-w-3xl">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-neonemerald text-xs font-mono mb-4">
+          <span class="h-2 w-2 rounded-full bg-neonemerald animate-pulse"></span>
+          Permanent Edge CDN &bull; Zero API Keys &bull; High Availability
+        </div>
+        <h1 class="text-3xl sm:text-5xl font-extrabold font-grotesk tracking-tight text-white leading-tight">
+          Developer API & Integration Guide
+        </h1>
+        <p class="mt-4 text-base sm:text-lg text-slate-400 leading-relaxed">
+          High-speed distributed media ingestion and streaming CDN. Publicly accessible worldwide with CORS enabled, chunked byte-range video/audio support, and zero rate-limit friction.
+        </p>
+
+        <!-- Base URL Box -->
+        <div class="mt-6 p-4 rounded-xl bg-cardbg/80 border border-cardborder flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div>
+            <span class="text-xs font-mono text-slate-400 uppercase tracking-wider">Base Production Edge URL:</span>
+            <div class="font-mono text-sm sm:text-base text-neoncyan font-semibold mt-0.5 select-all" id="base-url-text">
+              https://ntamediaserver.pages.dev
+            </div>
+          </div>
+          <button onclick="copyToClipboard('https://ntamediaserver.pages.dev', this)" class="text-xs font-mono px-3 py-2 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-neoncyan border border-cyan-500/30 flex items-center gap-1.5 transition">
+            <i class="fa-regular fa-copy"></i> Copy Base URL
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Layout -->
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+      
+      <!-- Sticky Sidebar / Navigation -->
+      <aside class="lg:col-span-3">
+        <div class="sticky top-24 space-y-6">
+          <div class="bg-cardbg rounded-xl p-4 border border-cardborder">
+            <h3 class="text-xs font-mono uppercase tracking-wider text-slate-400 font-bold mb-3">Endpoints</h3>
+            <nav class="space-y-1 text-sm font-mono">
+              <a href="#quickstart" class="block px-3 py-2 rounded-lg text-slate-300 hover:text-neoncyan hover:bg-surface transition">
+                ⚡ 30-Second Quickstart
+              </a>
+              <a href="#multipart-upload" class="block px-3 py-2 rounded-lg text-slate-300 hover:text-neoncyan hover:bg-surface transition flex items-center justify-between">
+                <span>POST /upload</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">FORM</span>
+              </a>
+              <a href="#serve-media" class="block px-3 py-2 rounded-lg text-slate-300 hover:text-neoncyan hover:bg-surface transition flex items-center justify-between">
+                <span>GET /media/{folder}/{file}</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">GET</span>
+              </a>
+              <a href="#rest-upload" class="block px-3 py-2 rounded-lg text-slate-300 hover:text-neoncyan hover:bg-surface transition flex items-center justify-between">
+                <span>PUT /v1/storage/...</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">REST</span>
+              </a>
+              <a href="#sync-list" class="block px-3 py-2 rounded-lg text-slate-300 hover:text-neoncyan hover:bg-surface transition flex items-center justify-between">
+                <span>GET /api/sync/list</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">JSON</span>
+              </a>
+              <a href="#tunnel-status" class="block px-3 py-2 rounded-lg text-slate-300 hover:text-neoncyan hover:bg-surface transition flex items-center justify-between">
+                <span>GET /register_tunnel</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-500/10 text-slate-400 border border-slate-500/20">SYS</span>
+              </a>
+            </nav>
+          </div>
+
+          <div class="bg-cardbg rounded-xl p-4 border border-cardborder">
+            <h3 class="text-xs font-mono uppercase tracking-wider text-slate-400 font-bold mb-3">SDKs & Code</h3>
+            <nav class="space-y-1 text-sm font-mono">
+              <a href="#sdk-js" class="block px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition">JavaScript / TypeScript</a>
+              <a href="#sdk-react" class="block px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition">React / Next.js Hook</a>
+              <a href="#sdk-python" class="block px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition">Python (Requests / FastAPI)</a>
+              <a href="#sdk-flutter" class="block px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition">Flutter / Dart</a>
+              <a href="#sdk-android" class="block px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition">Android (Kotlin / OkHttp)</a>
+              <a href="#sdk-ios" class="block px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition">iOS (Swift / URLSession)</a>
+            </nav>
+          </div>
+
+          <div class="bg-cardbg rounded-xl p-4 border border-cardborder">
+            <h3 class="text-xs font-mono uppercase tracking-wider text-slate-400 font-bold mb-2">Folders / Categories</h3>
+            <div class="flex flex-wrap gap-1.5 text-xs font-mono">
+              <span class="px-2 py-1 rounded bg-surface border border-cardborder text-slate-300">chat</span>
+              <span class="px-2 py-1 rounded bg-surface border border-cardborder text-slate-300">feed</span>
+              <span class="px-2 py-1 rounded bg-surface border border-cardborder text-slate-300">videos</span>
+              <span class="px-2 py-1 rounded bg-surface border border-cardborder text-slate-300">docs</span>
+              <span class="px-2 py-1 rounded bg-surface border border-cardborder text-slate-300">avatars</span>
+              <span class="px-2 py-1 rounded bg-surface border border-cardborder text-slate-300">banners</span>
+              <span class="px-2 py-1 rounded bg-surface border border-cardborder text-slate-300">stickers</span>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Documentation Content -->
+      <main class="lg:col-span-9 space-y-12">
+
+        <!-- 30-Second Quickstart -->
+        <section id="quickstart" class="bg-cardbg rounded-2xl p-6 sm:p-8 border border-cardborder">
+          <div class="flex items-center gap-3 mb-4">
+            <div class="h-8 w-8 rounded-lg bg-neoncyan/10 border border-neoncyan/30 flex items-center justify-center text-neoncyan font-bold">
+              1
+            </div>
+            <h2 class="text-xl sm:text-2xl font-bold font-grotesk text-white">
+              30-Second Quickstart
+            </h2>
+          </div>
+          <p class="text-slate-400 text-sm sm:text-base leading-relaxed mb-6">
+            Upload any image, video, audio, or document using a simple <code class="text-neoncyan bg-surface px-1.5 py-0.5 rounded font-mono text-xs">multipart/form-data</code> POST request:
+          </p>
+
+          <div class="rounded-xl bg-obsidian border border-cardborder overflow-hidden">
+            <div class="flex items-center justify-between px-4 py-2.5 bg-surface border-b border-cardborder">
+              <span class="text-xs font-mono text-slate-400 flex items-center gap-2">
+                <i class="fa-solid fa-terminal text-neoncyan"></i> cURL Upload Example
+              </span>
+              <button onclick="copyPreCode(this)" class="text-xs font-mono text-slate-400 hover:text-white transition">
+                <i class="fa-regular fa-copy"></i> Copy
+              </button>
+            </div>
+            <pre class="p-4 text-xs font-mono text-slate-300 overflow-x-auto leading-relaxed"><code>curl -X POST https://ntamediaserver.pages.dev/upload \
+  -F "file=@photo.jpg" \
+  -F "type=feed"</code></pre>
+          </div>
+
+          <div class="mt-4 rounded-xl bg-obsidian border border-cardborder overflow-hidden">
+            <div class="px-4 py-2 bg-surface/60 border-b border-cardborder text-xs font-mono text-slate-400">
+              Response (JSON 200 OK)
+            </div>
+            <pre class="p-4 text-xs font-mono text-emerald-400 overflow-x-auto"><code>{
+  "message": "File uploaded successfully",
+  "fileUrl": "/media/feed/1774794285_photo.jpg"
+}</code></pre>
+          </div>
+          <p class="mt-3 text-xs text-slate-400">
+            Access your uploaded file directly at: <a href="#" class="text-neoncyan underline font-mono">https://ntamediaserver.pages.dev/media/feed/1774794285_photo.jpg</a>
+          </p>
+        </section>
+
+        <!-- Interactive API Tester Playground -->
+        <section class="bg-gradient-to-b from-cardbg to-surface rounded-2xl p-6 sm:p-8 border border-cyan-500/20">
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-3">
+              <div class="h-8 w-8 rounded-lg bg-gradient-to-tr from-cyan-500 to-blue-500 flex items-center justify-center text-black font-bold text-sm">
+                <i class="fa-solid fa-play"></i>
+              </div>
+              <h2 class="text-xl font-bold font-grotesk text-white">Live Interactive API Playground</h2>
+            </div>
+            <span class="text-xs font-mono text-neoncyan bg-cyan-500/10 px-2 py-1 rounded border border-cyan-500/20">Interactive</span>
+          </div>
+          <p class="text-xs sm:text-sm text-slate-400 mb-6">
+            Test direct uploads to the production cluster right from your browser:
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="space-y-4">
+              <div>
+                <label class="block text-xs font-mono uppercase text-slate-400 mb-1.5">Target Folder</label>
+                <select id="play-type" class="w-full bg-obsidian border border-cardborder rounded-lg px-3 py-2 text-sm font-mono text-white focus:outline-none focus:border-neoncyan">
+                  <option value="feed">feed (Images / Posts)</option>
+                  <option value="chat">chat (Messages & Audio)</option>
+                  <option value="videos">videos (MP4 / WebM)</option>
+                  <option value="docs">docs (PDF, Zip, Raw)</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-xs font-mono uppercase text-slate-400 mb-1.5">Choose File</label>
+                <input type="file" id="play-file" class="w-full bg-obsidian border border-cardborder rounded-lg px-3 py-2 text-xs font-mono text-slate-300 file:mr-3 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-cyan-500/20 file:text-neoncyan cursor-pointer" />
+              </div>
+
+              <button id="play-submit" onclick="runPlaygroundUpload()" class="w-full py-2.5 px-4 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-mono font-bold text-sm shadow-lg shadow-cyan-500/20 transition flex items-center justify-center gap-2">
+                <i class="fa-solid fa-cloud-arrow-up"></i> Execute Live Upload
+              </button>
+            </div>
+
+            <div>
+              <label class="block text-xs font-mono uppercase text-slate-400 mb-1.5">Live Output Console</label>
+              <div id="play-output" class="h-44 bg-obsidian border border-cardborder rounded-lg p-3 font-mono text-xs text-slate-400 overflow-y-auto leading-relaxed">
+                Ready. Select a file and click execute.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Endpoint 1: POST /upload -->
+        <section id="multipart-upload" class="bg-cardbg rounded-2xl p-6 sm:p-8 border border-cardborder space-y-6">
+          <div class="flex flex-wrap items-center justify-between gap-3 border-b border-cardborder pb-4">
+            <div class="flex items-center gap-3">
+              <span class="px-2.5 py-1 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20 font-mono text-sm font-bold">POST</span>
+              <h2 class="text-lg sm:text-xl font-bold font-mono text-white">/upload</h2>
+            </div>
+            <span class="text-xs font-mono text-slate-400 bg-surface px-2.5 py-1 rounded border border-cardborder">multipart/form-data</span>
+          </div>
+
+          <p class="text-slate-300 text-sm leading-relaxed">
+            Universal file upload endpoint with automatic timestamp-based collision avoidance. Sanitizes filename and organizes storage by designated folder.
+          </p>
+
+          <h3 class="text-xs font-mono uppercase tracking-wider text-slate-400 font-bold">Request Parameters</h3>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs font-mono border-collapse">
+              <thead>
+                <tr class="border-b border-cardborder text-slate-400">
+                  <th class="py-2.5 px-3">Field</th>
+                  <th class="py-2.5 px-3">Type</th>
+                  <th class="py-2.5 px-3">Required</th>
+                  <th class="py-2.5 px-3">Description</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-cardborder text-slate-300">
+                <tr>
+                  <td class="py-2.5 px-3 text-neoncyan font-bold">file</td>
+                  <td class="py-2.5 px-3">Binary File</td>
+                  <td class="py-2.5 px-3 text-neonrose font-semibold">Yes</td>
+                  <td class="py-2.5 px-3">The raw file binary (JPEG, PNG, MP4, MP3, PDF, etc.)</td>
+                </tr>
+                <tr>
+                  <td class="py-2.5 px-3 text-neoncyan font-bold">type</td>
+                  <td class="py-2.5 px-3">String</td>
+                  <td class="py-2.5 px-3 text-slate-400">Optional</td>
+                  <td class="py-2.5 px-3">Destination category: <code class="text-neonemerald">feed</code>, <code class="text-neonemerald">chat</code>, <code class="text-neonemerald">videos</code>, or <code class="text-neonemerald">docs</code>. Defaults to <code class="text-neonemerald">chat</code>.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 class="text-xs font-mono uppercase tracking-wider text-slate-400 font-bold">Integration Code Snippets</h3>
+          
+          <!-- Code Tabs -->
+          <div class="rounded-xl bg-obsidian border border-cardborder overflow-hidden" data-tabs>
+            <div class="flex items-center justify-between px-3 py-2 bg-surface border-b border-cardborder overflow-x-auto">
+              <div class="flex items-center space-x-1">
+                <button onclick="switchTab(this, 'tab-js-up')" class="tab-btn px-3 py-1 rounded text-xs font-mono text-neoncyan bg-cardbg border border-cardborder">JavaScript</button>
+                <button onclick="switchTab(this, 'tab-py-up')" class="tab-btn px-3 py-1 rounded text-xs font-mono text-slate-400 hover:text-white">Python</button>
+                <button onclick="switchTab(this, 'tab-dart-up')" class="tab-btn px-3 py-1 rounded text-xs font-mono text-slate-400 hover:text-white">Flutter</button>
+                <button onclick="switchTab(this, 'tab-kt-up')" class="tab-btn px-3 py-1 rounded text-xs font-mono text-slate-400 hover:text-white">Kotlin</button>
+                <button onclick="switchTab(this, 'tab-swift-up')" class="tab-btn px-3 py-1 rounded text-xs font-mono text-slate-400 hover:text-white">Swift</button>
+              </div>
+              <button onclick="copyPreCode(this)" class="text-xs font-mono text-slate-400 hover:text-white px-2 py-1">
+                <i class="fa-regular fa-copy"></i>
+              </button>
+            </div>
+
+            <div id="tab-js-up" class="tab-content p-4 text-xs font-mono text-slate-300 leading-relaxed overflow-x-auto">
+              <pre><code>async function uploadMedia(file, type = 'feed') {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('type', type);
+
+  const res = await fetch('https://ntamediaserver.pages.dev/upload', {
+    method: 'POST',
+    body: formData
+  });
+
+  if (!res.ok) throw new Error(`Upload failed: ${res.statusText}`);
+  const data = await res.json();
+  
+  // Full public URL to embed in img/video/audio
+  const publicUrl = `https://ntamediaserver.pages.dev${data.fileUrl}`;
+  return { ...data, publicUrl };
+}</code></pre>
+            </div>
+
+            <div id="tab-py-up" class="tab-content hidden p-4 text-xs font-mono text-slate-300 leading-relaxed overflow-x-auto">
+              <pre><code>import requests
+
+def upload_file(file_path: str, upload_type: str = "feed"):
+    url = "https://ntamediaserver.pages.dev/upload"
+    with open(file_path, "rb") as f:
+        files = {"file": f}
+        data = {"type": upload_type}
+        response = requests.post(url, files=files, data=data)
+        response.raise_for_status()
+        result = response.json()
+        result["public_url"] = f"https://ntamediaserver.pages.dev{result['fileUrl']}"
+        return result</code></pre>
+            </div>
+
+            <div id="tab-dart-up" class="tab-content hidden p-4 text-xs font-mono text-slate-300 leading-relaxed overflow-x-auto">
+              <pre><code>import 'dart:io';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+
+Future&lt;String&gt; uploadMedia(File file, {String type = 'feed'}) async {
+  final uri = Uri.parse('https://ntamediaserver.pages.dev/upload');
+  final request = http.MultipartRequest('POST', uri)
+    ..fields['type'] = type
+    ..files.add(await http.MultipartFile.fromPath('file', file.path));
+
+  final streamedResponse = await request.send();
+  final response = await http.Response.fromStream(streamedResponse);
+  
+  if (response.statusCode == 200) {
+    final data = jsonDecode(response.body);
+    return 'https://ntamediaserver.pages.dev${data['fileUrl']}';
+  } else {
+    throw Exception('Failed to upload file');
+  }
+}</code></pre>
+            </div>
+
+            <div id="tab-kt-up" class="tab-content hidden p-4 text-xs font-mono text-slate-300 leading-relaxed overflow-x-auto">
+              <pre><code>import okhttp3.*
+import java.io.File
+
+fun uploadMedia(file: File, type: String = "feed"): String {
+    val client = OkHttpClient()
+    val requestBody = MultipartBody.Builder()
+        .setType(MultipartBody.FORM)
+        .addFormDataPart("type", type)
+        .addFormDataPart(
+            "file", file.name,
+            RequestBody.create(MediaType.parse("application/octet-stream"), file)
+        )
+        .build()
+
+    val request = Request.Builder()
+        .url("https://ntamediaserver.pages.dev/upload")
+        .post(requestBody)
+        .build()
+
+    client.newCall(request).execute().use { response ->
+        if (!response.isSuccessful) throw Exception("Unexpected code $response")
+        return response.body()?.string() ?: ""
+    }
+}</code></pre>
+            </div>
+
+            <div id="tab-swift-up" class="tab-content hidden p-4 text-xs font-mono text-slate-300 leading-relaxed overflow-x-auto">
+              <pre><code>import Foundation
+
+func uploadMedia(fileData: Data, fileName: String, type: String = "feed") async throws -> String {
+    let url = URL(string: "https://ntamediaserver.pages.dev/upload")!
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    
+    let boundary = UUID().uuidString
+    request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+    
+    var body = Data()
+    body.append("--\(boundary)\r\n".data(using: .utf8)!)
+    body.append("Content-Disposition: form-data; name=\"type\"\r\n\r\n\(type)\r\n".data(using: .utf8)!)
+    body.append("--\(boundary)\r\n".data(using: .utf8)!)
+    body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\r\n".data(using: .utf8)!)
+    body.append("Content-Type: application/octet-stream\r\n\r\n".data(using: .utf8)!)
+    body.append(fileData)
+    body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+    
+    let (data, response) = try await URLSession.shared.upload(for: request, from: body)
+    return String(decoding: data, as: UTF8.self)
+}</code></pre>
+            </div>
+          </div>
+        </section>
+
+        <!-- Endpoint 2: GET /media/<folder>/<filename> -->
+        <section id="serve-media" class="bg-cardbg rounded-2xl p-6 sm:p-8 border border-cardborder space-y-6">
+          <div class="flex flex-wrap items-center justify-between gap-3 border-b border-cardborder pb-4">
+            <div class="flex items-center gap-3">
+              <span class="px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono text-sm font-bold">GET</span>
+              <h2 class="text-lg sm:text-xl font-bold font-mono text-white">/media/{folder}/{filename}</h2>
+            </div>
+            <span class="text-xs font-mono text-neonemerald bg-emerald-500/10 px-2.5 py-1 rounded border border-emerald-500/20">Range Seeking & P2P Fallback</span>
+          </div>
+
+          <p class="text-slate-300 text-sm leading-relaxed">
+            Streams uploaded media directly to clients. Supports HTTP 206 Partial Content (range requests) for video scrubbing, audio streaming, and image rendering. If a file is not on the primary device, it automatically executes a P2P fallback download from peer nodes without client disruption.
+          </p>
+
+          <h3 class="text-xs font-mono uppercase tracking-wider text-slate-400 font-bold">HTML Embedding Examples</h3>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="p-4 rounded-xl bg-obsidian border border-cardborder">
+              <span class="text-xs font-mono text-slate-400 block mb-2 font-bold">Image Tag</span>
+              <pre class="text-xs font-mono text-slate-300 overflow-x-auto"><code>&lt;img 
+  src="https://ntamediaserver.pages.dev/media/feed/1774794285_photo.jpg" 
+  alt="Feed Post" 
+  loading="lazy" 
+/&gt;</code></pre>
+            </div>
+
+            <div class="p-4 rounded-xl bg-obsidian border border-cardborder">
+              <span class="text-xs font-mono text-slate-400 block mb-2 font-bold">Video Tag (Seekable)</span>
+              <pre class="text-xs font-mono text-slate-300 overflow-x-auto"><code>&lt;video controls preload="metadata"&gt;
+  &lt;source 
+    src="https://ntamediaserver.pages.dev/media/videos/1774794285_clip.mp4" 
+    type="video/mp4" 
+  /&gt;
+&lt;/video&gt;</code></pre>
+            </div>
+          </div>
+        </section>
+
+        <!-- Endpoint 3: REST Storage PUT / GET -->
+        <section id="rest-upload" class="bg-cardbg rounded-2xl p-6 sm:p-8 border border-cardborder space-y-6">
+          <div class="flex flex-wrap items-center justify-between gap-3 border-b border-cardborder pb-4">
+            <div class="flex items-center gap-3">
+              <span class="px-2.5 py-1 rounded-md bg-purple-500/10 text-purple-400 border border-purple-500/20 font-mono text-sm font-bold">PUT | GET</span>
+              <h2 class="text-lg sm:text-xl font-bold font-mono text-white">/v1/storage/objects/{folder}/{filename}</h2>
+            </div>
+            <span class="text-xs font-mono text-purple-400 bg-purple-500/10 px-2.5 py-1 rounded border border-purple-500/20">REST Object API</span>
+          </div>
+
+          <p class="text-slate-300 text-sm leading-relaxed">
+            RESTful direct binary PUT upload and GET endpoint. Ideal for user avatars, banners, stickers, and exact filename preservation.
+          </p>
+
+          <div class="rounded-xl bg-obsidian border border-cardborder overflow-hidden">
+            <div class="flex items-center justify-between px-4 py-2 bg-surface border-b border-cardborder">
+              <span class="text-xs font-mono text-slate-400">Direct Binary PUT (cURL)</span>
+              <button onclick="copyPreCode(this)" class="text-xs font-mono text-slate-400 hover:text-white"><i class="fa-regular fa-copy"></i></button>
+            </div>
+            <pre class="p-4 text-xs font-mono text-slate-300 overflow-x-auto"><code>curl -X PUT https://ntamediaserver.pages.dev/v1/storage/objects/avatars/user_102.png \
+  -H "Content-Type: image/png" \
+  --data-binary "@avatar.png"</code></pre>
+          </div>
+        </section>
+
+        <!-- Endpoint 4: Cluster Sync & Discovery -->
+        <section id="sync-list" class="bg-cardbg rounded-2xl p-6 sm:p-8 border border-cardborder space-y-6">
+          <div class="flex flex-wrap items-center justify-between gap-3 border-b border-cardborder pb-4">
+            <div class="flex items-center gap-3">
+              <span class="px-2.5 py-1 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono text-sm font-bold">GET</span>
+              <h2 class="text-lg sm:text-xl font-bold font-mono text-white">/api/sync/list</h2>
+            </div>
+            <span class="text-xs font-mono text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded border border-amber-500/20">Cluster Inventory</span>
+          </div>
+
+          <p class="text-slate-300 text-sm leading-relaxed">
+            Returns complete dictionary of all files across folders along with byte sizes. Used by cluster nodes for automated bi-directional synchronization.
+          </p>
+
+          <div class="rounded-xl bg-obsidian border border-cardborder overflow-hidden">
+            <pre class="p-4 text-xs font-mono text-amber-400 overflow-x-auto"><code>{
+  "feed": { "1774794285_post.jpg": 248102, "1774794290_banner.png": 89410 },
+  "chat": { "1774794295_audio.m4a": 54109 },
+  "videos": { "1774794300_demo.mp4": 12849102 },
+  "docs": { "1774794310_spec.pdf": 451020 }
+}</code></pre>
+          </div>
+        </section>
+
+        <!-- React / Next.js Component Drop-in -->
+        <section id="sdk-react" class="bg-cardbg rounded-2xl p-6 sm:p-8 border border-cardborder space-y-4">
+          <div class="flex items-center gap-3">
+            <i class="fa-brands fa-react text-2xl text-neoncyan"></i>
+            <h2 class="text-xl font-bold font-grotesk text-white">React / Next.js Drop-in Component</h2>
+          </div>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            Copy-paste this production-ready React component for seamless media uploads in your frontend:
+          </p>
+
+          <div class="rounded-xl bg-obsidian border border-cardborder overflow-hidden">
+            <div class="flex items-center justify-between px-4 py-2 bg-surface border-b border-cardborder">
+              <span class="text-xs font-mono text-slate-400">MediaUploader.jsx</span>
+              <button onclick="copyPreCode(this)" class="text-xs font-mono text-slate-400 hover:text-white"><i class="fa-regular fa-copy"></i></button>
+            </div>
+            <pre class="p-4 text-xs font-mono text-slate-300 overflow-x-auto leading-relaxed"><code>import React, { useState } from 'react';
+
+export function MediaUploader({ onUploaded, folder = 'feed' }) {
+  const [uploading, setUploading] = useState(false);
+  const [url, setUrl] = useState(null);
+
+  const handleUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('type', folder);
+
+      const res = await fetch('https://ntamediaserver.pages.dev/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      const fullUrl = `https://ntamediaserver.pages.dev${data.fileUrl}`;
+      setUrl(fullUrl);
+      if (onUploaded) onUploaded(fullUrl);
+    } catch (err) {
+      alert('Upload failed: ' + err.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    &lt;div className="p-4 border rounded-xl"&gt;
+      &lt;input type="file" onChange={handleUpload} disabled={uploading} /&gt;
+      {uploading &amp;&amp; &lt;p className="text-sm mt-2 text-cyan-400"&gt;Uploading...&lt;/p&gt;}
+      {url &amp;&amp; (
+        &lt;div className="mt-3"&gt;
+          &lt;img src={url} alt="Uploaded" className="max-h-48 rounded" /&gt;
+        &lt;/div&gt;
+      )}
+    &lt;/div&gt;
+  );
+}</code></pre>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast" class="fixed bottom-6 right-6 z-50 transform translate-y-20 opacity-0 transition-all duration-300 bg-surface border border-cyan-500/40 text-white text-xs font-mono px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2">
+    <i class="fa-solid fa-check text-neonemerald"></i>
+    <span id="toast-msg">Copied to clipboard</span>
+  </div>
+
+  <!-- Footer -->
+  <footer class="border-t border-cardborder bg-obsidian py-8 mt-16 text-center text-xs font-mono text-slate-500">
+    <p>Netuark High-Availability Autonomous Media CDN &bull; 100% Free & Open-Source</p>
+  </footer>
+
+  <script>
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      document.getElementById('toast-msg').textContent = msg;
+      toast.classList.remove('translate-y-20', 'opacity-0');
+      setTimeout(() => {
+        toast.classList.add('translate-y-20', 'opacity-0');
+      }, 2500);
+    }
+
+    function copyToClipboard(text, btn) {
+      navigator.clipboard.writeText(text);
+      showToast('Copied: ' + text);
+    }
+
+    function copyPreCode(btn) {
+      const card = btn.closest('div').parentElement;
+      const code = card.querySelector('pre code').innerText;
+      navigator.clipboard.writeText(code);
+      showToast('Code snippet copied to clipboard');
+    }
+
+    function switchTab(btn, tabId) {
+      const container = btn.closest('[data-tabs]');
+      container.querySelectorAll('.tab-btn').forEach(b => {
+        b.classList.remove('text-neoncyan', 'bg-cardbg', 'border', 'border-cardborder');
+        b.classList.add('text-slate-400');
+      });
+      btn.classList.add('text-neoncyan', 'bg-cardbg', 'border', 'border-cardborder');
+      btn.classList.remove('text-slate-400');
+
+      container.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+      container.querySelector('#' + tabId).classList.remove('hidden');
+    }
+
+    async function runPlaygroundUpload() {
+      const fileInput = document.getElementById('play-file');
+      const typeSelect = document.getElementById('play-type');
+      const out = document.getElementById('play-output');
+
+      if (!fileInput.files || fileInput.files.length === 0) {
+        out.innerHTML = '<span style="color:#f43f5e">[!] Please select a file first.</span>';
+        return;
+      }
+
+      const file = fileInput.files[0];
+      const type = typeSelect.value;
+
+      out.innerHTML = `[*] Uploading ${file.name} (${(file.size/1024).toFixed(1)} KB) to /upload (type=${type})...\n`;
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('type', type);
+
+      const startTime = performance.now();
+      try {
+        const res = await fetch('/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        const elapsed = (performance.now() - startTime).toFixed(0);
+        const data = await res.json();
+
+        if (res.ok) {
+          const publicUrl = window.location.origin + data.fileUrl;
+          out.innerHTML = `<span style="color:#10b981">[+] 200 OK (${elapsed}ms)</span>\n` +
+            JSON.stringify(data, null, 2) +
+            `\n\n[+] Live URL:\n<a href="${data.fileUrl}" target="_blank" style="color:#00f3ff;text-decoration:underline;">${publicUrl}</a>`;
+        } else {
+          out.innerHTML = `<span style="color:#f43f5e">[-] HTTP ${res.status}: ${data.error || 'Upload failed'}</span>`;
+        }
+      } catch (err) {
+        out.innerHTML = `<span style="color:#f43f5e">[-] Error: ${err.message}</span>`;
+      }
+    }
+  </script>
+</body>
+</html>

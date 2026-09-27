@@ -35,6 +35,14 @@ def add_cors_headers(response):
     response.headers['Access-Control-Expose-Headers'] = 'Accept-Ranges, Content-Encoding, Content-Length, Content-Range'
     return response
 
+@app.route('/docs')
+def docs():
+    docs_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'docs.html')
+    if os.path.exists(docs_path):
+        with open(docs_path, 'r', encoding='utf-8') as f:
+            return f.read(), 200, {'Content-Type': 'text/html; charset=utf-8'}
+    return "Docs not found", 404
+
 @app.route('/')
 def index():
     return f"""
@@ -44,6 +52,9 @@ def index():
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <style>
                 body {{ font-family: sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; background: #f4f4f9; }}
+                .top-bar {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }}
+                .docs-btn {{ background: #10b981; color: white; padding: 8px 14px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 14px; }}
+                .docs-btn:hover {{ background: #059669; }}
                 .container {{ background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }}
                 h1, h2 {{ color: #333; }}
                 .form-group {{ margin-bottom: 15px; }}
@@ -67,6 +78,10 @@ def index():
             </style>
         </head>
         <body>
+            <div class="top-bar">
+                <h1 style="margin: 0; font-size: 24px;">⚡ Netuark Media Cluster</h1>
+                <a href="/docs" class="docs-btn">📖 API Docs & SDKs</a>
+            </div>
             <div class="container">
                 <h2>Cluster Dashboard</h2>
                 <div class="dashboard" id="telemetry-dashboard">
