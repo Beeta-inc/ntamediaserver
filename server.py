@@ -334,6 +334,94 @@ def rest_serve(folder, filename):
         
     return fallback_and_serve(target_dir, folder, filename)
 
+def propagate_delete(folder, filename, path_prefix):
+    if request.args.get('propagate', 'true') != 'true':
+        return
+    try:
+        device_id = ""
+        if os.path.exists('.device_id'):
+            with open('.device_id', 'r') as f:
+                device_id = f.read().strip()
+                
+        req = urllib.request.Request("https://firestore.googleapis.com/v1/projects/ntamedia-1f03d/databases/(default)/documents/serverSync/coordinator")
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode())
+            
+        peer_urls = []
+        for key, value in data.get('fields', {}).items():
+            if key.startswith('peer_url_') and key != f'peer_url_{device_id}':
+                peer_urls.append(value.get('stringValue'))
+                
+        for peer in peer_urls:
+            try:
+                peer_file_url = f"{peer}{path_prefix}/{folder}/{filename}?propagate=false"
+                print(f"[*] Propagating delete to {peer}")
+                dl_req = urllib.request.Request(peer_file_url, method='DELETE')
+                urllib.request.urlopen(dl_req, timeout=5)
+            except Exception as e:
+                print(f"[-] Peer delete failed for {peer}: {e}")
+    except Exception as e:
+        print(f"Failed to propagate delete: {e}")
+
+@app.route('/media/<folder>/<filename>', methods=['DELETE'])
+def delete_media(folder, filename):
+    if folder == 'feed':
+        target_dir = FEED_DIR
+    elif folder == 'videos':
+        target_dir = VIDEO_DIR
+    elif folder == 'docs':
+        target_dir = DOC_DIR
+    else:
+        target_dir = CHAT_DIR
+        
+    filename = secure_filename(filename)
+    file_path = os.path.join(target_dir, filename)
+    
+    deleted = False
+    if os.path.exists(file_path):
+        try:
+            os.remove(file_path)
+            deleted = True
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    propagate_delete(folder, filename, "/media")
+
+    if deleted:
+        return jsonify({'message': 'File deleted successfully'}), 200
+    else:
+        return jsonify({'message': 'File not found locally, but delete broadcasted'}), 404
+
+@app.route('/v1/storage/objects/<folder>/<filename>', methods=['DELETE', 'OPTIONS'])
+def rest_delete(folder, filename):
+    if request.method == 'OPTIONS':
+        return '', 204
+        
+    if folder == 'avatars' or folder == 'banners':
+        target_dir = DOC_DIR
+    elif folder == 'stickers':
+        target_dir = FEED_DIR 
+    else:
+        target_dir = CHAT_DIR
+        
+    filename = secure_filename(filename)
+    file_path = os.path.join(target_dir, filename)
+    
+    deleted = False
+    if os.path.exists(file_path):
+        try:
+            os.remove(file_path)
+            deleted = True
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    propagate_delete(folder, filename, "/v1/storage/objects")
+
+    if deleted:
+        return jsonify({'success': True, 'message': 'File deleted successfully'}), 200
+    else:
+        return jsonify({'success': True, 'message': 'File not found locally, but delete broadcasted'}), 404
+
 @app.route('/api/sync/list')
 def sync_list():
     files_info = {}
