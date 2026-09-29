@@ -615,6 +615,11 @@ def fallback_and_serve(target_dir, folder, filename):
             if not _is_corrupt_zstd_media(cand_path, filename):
                 return send_from_directory(fallback_dir, filename)
             
+    # Anti-Deadlock Guard: Do not recurse if request comes from peer mesh
+    incoming_ua = (request.headers.get("User-Agent") or "").lower()
+    if request.headers.get("X-Mesh-Hop") or "meshsync" in incoming_ua or "redmi-ai-node" in incoming_ua:
+        return send_from_directory(target_dir, filename)
+
     # P2P Fallback to Counterpart Node (Redmi 9i Sovereign Micro-Datacenter)
     try:
         device_id = ""
@@ -637,23 +642,18 @@ def fallback_and_serve(target_dir, folder, filename):
                 
         candidate_paths = [
             f"/v1/storage/objects/{folder}/{filename}",
-            f"/v1/storage/objects/media/{filename}",
-            f"/v1/storage/objects/avatars/{filename}",
-            f"/v1/storage/objects/stickers/{filename}",
-            f"/media/{folder}/{filename}",
-            f"/media/videos/{filename}",
-            f"/media/chat/{filename}",
-            f"/media/feed/{filename}",
-            f"/media/docs/{filename}",
-            f"/s/public/{filename}"
+            f"/media/{folder}/{filename}"
         ]
 
         for peer in peer_urls:
             for c_path in candidate_paths:
                 try:
                     peer_file_url = f"{peer}{c_path}"
-                    dl_req = urllib.request.Request(peer_file_url, headers={"User-Agent": "NTA-MediaServer/MeshSync"})
-                    with urllib.request.urlopen(dl_req, timeout=8) as dl_res:
+                    dl_req = urllib.request.Request(peer_file_url, headers={
+                        "User-Agent": "NTA-MediaServer/MeshSync",
+                        "X-Mesh-Hop": "1"
+                    })
+                    with urllib.request.urlopen(dl_req, timeout=1.5) as dl_res:
                         if dl_res.status == 200:
                             data = dl_res.read()
                             # Reject if peer sent zstd compressed bytes for media
