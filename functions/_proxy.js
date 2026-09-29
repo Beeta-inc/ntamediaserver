@@ -97,11 +97,14 @@ export async function handleRequest(context) {
     try { reqBody = await request.arrayBuffer(); } catch (_) { reqBody = request.body; }
   }
 
-  let response = null;
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  const isStorageReq = url.pathname.startsWith("/v1/storage/objects/") || url.pathname.startsWith("/media/") || url.pathname.startsWith("/s/");
+  const maxAttempts = isStorageReq ? 1 : 2;
+  const timeoutMs = isStorageReq ? 6000 : 20000;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
       const proxyHeaders = new Headers(request.headers);
       proxyHeaders.delete("cf-connecting-ip");
@@ -119,7 +122,7 @@ export async function handleRequest(context) {
       }));
       clearTimeout(timeoutId);
 
-      if ([502, 503, 504, 530].includes(response.status) && attempt < 3) {
+      if ([502, 503, 504, 530].includes(response.status) && attempt < maxAttempts) {
         cachedOrigin = null;
         await new Promise(r => setTimeout(r, attempt * 200));
         origin = await getLiveOrigin(true);
@@ -128,7 +131,7 @@ export async function handleRequest(context) {
       }
       break;
     } catch (_) {
-      if (attempt < 3) {
+      if (attempt < maxAttempts) {
         cachedOrigin = null;
         await new Promise(r => setTimeout(r, attempt * 200));
         origin = await getLiveOrigin(true);
@@ -137,17 +140,22 @@ export async function handleRequest(context) {
     }
   }
 
-  const isStorageReq = url.pathname.startsWith("/v1/storage/objects/") || url.pathname.startsWith("/media/") || url.pathname.startsWith("/s/");
-
   // ⚡ Try Peer Node (Sovereign Phone Datacenter) if local server returned 404 or is reconnecting
-  if (isStorageReq && (!response || [404, 502, 503, 504, 530].includes(response.status))) {
+  const hasHop = request.headers.get("X-Edge-Hop") || request.headers.get("X-Mesh-Hop");
+  if (isStorageReq && !hasHop && (!response || [404, 502, 503, 504, 530].includes(response.status))) {
     try {
+      const peerReqHeaders = new Headers(request.headers);
+      peerReqHeaders.set("X-Edge-Hop", "1");
       const peerUrl = `https://phone-whisper-server.pages.dev${url.pathname}${url.search}`;
+      const controller = new AbortController();
+      const peerTimeoutId = setTimeout(() => controller.abort(), 4000);
       const peerRes = await fetch(new Request(peerUrl, {
         method: request.method,
-        headers: request.headers,
-        body: reqBody instanceof ArrayBuffer ? reqBody.slice(0) : reqBody
+        headers: peerReqHeaders,
+        body: reqBody instanceof ArrayBuffer ? reqBody.slice(0) : reqBody,
+        signal: controller.signal
       }));
+      clearTimeout(peerTimeoutId);
       if (peerRes && [200, 206].includes(peerRes.status)) {
         const peerRespHeaders = new Headers(peerRes.headers);
         Object.entries(CORS_HEADERS).forEach(([k, v]) => peerRespHeaders.set(k, v));
@@ -160,6 +168,26 @@ export async function handleRequest(context) {
         });
       }
     } catch (_) {}
+  }
+
+  if (isStorageReq && (!response || [404, 502, 503, 504, 530].includes(response.status))) {
+    const rawFileName = decodeURIComponent(url.pathname.split("/").pop() || "");
+    const ext = (rawFileName.split('.').pop() || '').toLowerCase();
+    const STORAGE_MIME = {
+      wav:'audio/wav',webm:'video/webm',mp3:'audio/mpeg',ogg:'audio/ogg',
+      m4a:'audio/mp4',aac:'audio/aac',mp4:'video/mp4',mov:'video/quicktime',
+      png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp',
+      gif:'image/gif',svg:'image/svg+xml',pdf:'application/pdf'
+    };
+    return new Response("Not Found", {
+      status: 404,
+      statusText: "Not Found",
+      headers: {
+        ...CORS_HEADERS,
+        "Cache-Control": "public, max-age=15, s-maxage=15",
+        "Content-Type": STORAGE_MIME[ext] || "application/octet-stream"
+      }
+    });
   }
 
   if (!response || [502, 503, 504, 530].includes(response.status)) {
