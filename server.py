@@ -584,14 +584,36 @@ def upload_file():
         'fileUrl': file_url
     })
 
+def _is_corrupt_zstd_media(fpath, fname):
+    """Detects if an image/media file on disk is incorrectly stored as raw zstd compressed bytes"""
+    if not os.path.exists(fpath):
+        return False
+    if any(fname.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp", ".gif", ".webm", ".mp4", ".mp3", ".ogg"]):
+        try:
+            with open(fpath, "rb") as f:
+                header = f.read(4)
+            if header == b"\x28\xb5\x2f\xfd":
+                try:
+                    os.remove(fpath)
+                    print(f"[!] Purged corrupt zstd file from disk: {fpath}")
+                except Exception:
+                    pass
+                return True
+        except Exception:
+            pass
+    return False
+
 def fallback_and_serve(target_dir, folder, filename):
     file_path = os.path.join(target_dir, filename)
     if os.path.exists(file_path):
-        return send_from_directory(target_dir, filename)
+        if not _is_corrupt_zstd_media(file_path, filename):
+            return send_from_directory(target_dir, filename)
         
     for fallback_dir in [CHAT_DIR, FEED_DIR, DOC_DIR, VIDEO_DIR]:
-        if os.path.exists(os.path.join(fallback_dir, filename)):
-            return send_from_directory(fallback_dir, filename)
+        cand_path = os.path.join(fallback_dir, filename)
+        if os.path.exists(cand_path):
+            if not _is_corrupt_zstd_media(cand_path, filename):
+                return send_from_directory(fallback_dir, filename)
             
     # P2P Fallback to Counterpart Node (Redmi 9i Sovereign Micro-Datacenter)
     try:
@@ -633,10 +655,15 @@ def fallback_and_serve(target_dir, folder, filename):
                     dl_req = urllib.request.Request(peer_file_url, headers={"User-Agent": "NTA-MediaServer/MeshSync"})
                     with urllib.request.urlopen(dl_req, timeout=8) as dl_res:
                         if dl_res.status == 200:
+                            data = dl_res.read()
+                            # Reject if peer sent zstd compressed bytes for media
+                            if any(filename.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp", ".gif"]) and data[:4] == b"\x28\xb5\x2f\xfd":
+                                print(f"[-] Refusing corrupt zstd payload from peer {peer} for {filename}")
+                                continue
                             os.makedirs(target_dir, exist_ok=True)
                             tmp_file = file_path + ".tmp"
                             with open(tmp_file, 'wb') as out_f:
-                                out_f.write(dl_res.read())
+                                out_f.write(data)
                             os.replace(tmp_file, file_path)
                             print(f"[+] Successfully downloaded {filename} from peer {peer} ({c_path})!")
                             return send_from_directory(target_dir, filename)
