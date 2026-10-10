@@ -192,7 +192,7 @@ def get_storage_info():
     return info
 
 def is_network_online(timeout=1.5):
-    for host in [("1.1.1.1", 53), ("8.8.8.8", 53), ("1.0.0.1", 53)]:
+    for host in [("1.1.1.1", 53), ("8.8.8.8", 53), ("1.0.0.1", 53), ("8.8.4.4", 53)]:
         try:
             s = socket.create_connection(host, timeout=timeout)
             s.close()
@@ -201,10 +201,40 @@ def is_network_online(timeout=1.5):
             continue
     try:
         res = subprocess.run(["ping", "-c", "1", "-W", "1", "1.1.1.1"], capture_output=True, timeout=2)
+        if res.returncode == 0:
+            return True
+    except Exception:
+        pass
+    try:
+        res = subprocess.run(["ping", "-c", "1", "-W", "1", "8.8.8.8"], capture_output=True, timeout=2)
         return res.returncode == 0
     except Exception:
         pass
     return False
+
+def wait_for_network_recovery():
+    """Continuously pings 1.1.1.1 and 8.8.8.8 until internet is confirmed restored."""
+    offline_start = time.time()
+    ping_cycle = 0
+    consecutive_success = 0
+    print("\n[NET-WATCHDOG] ⚠️ Network disconnected (Router off / Wi-Fi lost).", flush=True)
+    print("[NET-WATCHDOG] ⏳ Starting continuous ping loop (1.1.1.1 / 8.8.8.8) waiting for reconnection...", flush=True)
+    
+    while consecutive_success < 2:
+        ping_cycle += 1
+        if is_network_online(timeout=2.0):
+            consecutive_success += 1
+            time.sleep(1)
+        else:
+            consecutive_success = 0
+            if ping_cycle % 5 == 1:
+                duration = int(time.time() - offline_start)
+                print(f"[NET-WATCHDOG] ⏳ Pinging continuously... Offline for {duration}s (attempt #{ping_cycle})", flush=True)
+            time.sleep(2)
+            
+    total_downtime = int(time.time() - offline_start)
+    print(f"[NET-WATCHDOG] 🚀 NETWORK RESTORED! (Downtime: {total_downtime}s). Internet connection confirmed stable.", flush=True)
+    return total_downtime
 
 def get_device_info():
     model = "Lenovo L38012"

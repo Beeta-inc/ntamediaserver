@@ -969,6 +969,50 @@ def internal_logs():
             return jsonify({"error": str(e)}), 500
     return jsonify({"error": "Log file not found", "path": log_file}), 404
 
+def standalone_network_watchdog():
+    """Fallback watchdog for when server.py runs standalone without auto_tunnel.py coordinator."""
+    time.sleep(10)
+    was_offline = False
+    offline_start = 0
+    while True:
+        try:
+            # Check if auto_tunnel is actively running (which handles coordinator restart)
+            is_tunnel_running = False
+            try:
+                res = subprocess.run(["pgrep", "-f", "auto_tunnel.py"], capture_output=True, text=True, timeout=2)
+                if res.returncode == 0 and res.stdout.strip():
+                    is_tunnel_running = True
+            except Exception:
+                pass
+                
+            if is_tunnel_running:
+                # auto_tunnel supervisor handles network recovery and server restart
+                time.sleep(10)
+                continue
+
+            if not telemetry.is_network_online(timeout=1.5):
+                if not was_offline:
+                    was_offline = True
+                    offline_start = time.time()
+                    print("\n[SERVER-WATCHDOG] ⚠️ Network disconnected! Pinging continuously...", flush=True)
+                time.sleep(2)
+                continue
+
+            if was_offline:
+                downtime = int(time.time() - offline_start)
+                was_offline = False
+                print(f"\n[SERVER-WATCHDOG] 🚀 Network restored after {downtime}s! Restarting server.py...", flush=True)
+                time.sleep(1)
+                repo_dir = os.path.dirname(os.path.abspath(__file__))
+                subprocess.Popen([sys.executable, os.path.join(repo_dir, "server.py")], cwd=repo_dir)
+                os._exit(0)
+        except Exception:
+            pass
+        time.sleep(5)
+
+import threading
+threading.Thread(target=standalone_network_watchdog, daemon=True).start()
+
 if __name__ == '__main__':
     # Run universally on the local network and internally
     app.run(host='0.0.0.0', port=3000)

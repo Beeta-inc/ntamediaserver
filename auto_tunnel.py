@@ -302,6 +302,73 @@ def auto_git_update_loop():
         except Exception:
             pass
 
+def restart_server_and_tunnel():
+    """Completely re-initializes and restarts both server.py and cloudflared tunnel upon network restoration."""
+    global current_process, current_url, last_pushed_url
+    print("\n[NET-WATCHDOG] 🔄 Complete server stack restart initiated...", flush=True)
+    
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # 1. Terminate existing cloudflared process
+    if current_process:
+        try:
+            current_process.terminate()
+            current_process.kill()
+        except Exception:
+            pass
+        current_process = None
+    subprocess.run(["pkill", "-9", "-f", "cloudflared"], capture_output=True)
+    
+    # 2. Terminate existing server.py cleanly
+    print("[NET-WATCHDOG] 🛑 Stopping existing server.py instances...", flush=True)
+    subprocess.run(["pkill", "-9", "-f", "server.py"], capture_output=True)
+    time.sleep(2)
+    
+    # 3. Re-assert Termux wake lock so device doesn't sleep while running server
+    try:
+        subprocess.run(["termux-wake-lock"], capture_output=True, timeout=2)
+    except Exception:
+        pass
+
+    # 4. Spawn a fresh server.py process
+    print("[NET-WATCHDOG] 🚀 Starting fresh server.py instance...", flush=True)
+    server_script = os.path.join(repo_dir, "server.py")
+    server_log = os.path.join(repo_dir, "server.log")
+    try:
+        log_out = open(server_log, "a")
+        subprocess.Popen(
+            [sys.executable, server_script],
+            cwd=repo_dir,
+            stdout=log_out,
+            stderr=subprocess.STDOUT
+        )
+    except Exception as e:
+        print(f"[NET-WATCHDOG] Error spawning server.py: {e}", flush=True)
+    
+    # 5. Wait for server.py to bind to port 3000
+    print("[NET-WATCHDOG] ⏳ Waiting for server.py to bind to port 3000...", flush=True)
+    server_ready = False
+    import socket
+    for _ in range(15):
+        time.sleep(1)
+        try:
+            s = socket.create_connection(("127.0.0.1", 3000), timeout=1)
+            s.close()
+            server_ready = True
+            break
+        except Exception:
+            pass
+            
+    if server_ready:
+        print("[NET-WATCHDOG] ✅ server.py is live and listening on port 3000!", flush=True)
+    else:
+        print("[NET-WATCHDOG] ⚠️ server.py port check timed out; proceeding to start tunnel anyway...", flush=True)
+        
+    # 6. Reset tunnel URLs and spawn fresh Cloudflare Tunnel
+    current_url = None
+    last_pushed_url = None
+    start_tunnel()
+
 def run_coordinator():
     global current_process, last_pushed_url
     print(f"Starting HA Tunnel Coordinator. Device ID: {DEVICE_ID}", flush=True)
@@ -324,29 +391,10 @@ def run_coordinator():
     while True:
         # ── 🌐 Network Watchdog with Ping Reconnect ──
         if not telemetry.is_network_online(timeout=1.5):
-            print("\n[NET-WATCHDOG] ⚠️ Network offline! Starting continuous ping loop until network is restored...", flush=True)
-            offline_start = time.time()
-            ping_cycle = 0
-            while not telemetry.is_network_online(timeout=2.0):
-                ping_cycle += 1
-                if ping_cycle % 5 == 1:
-                    duration = int(time.time() - offline_start)
-                    print(f"[NET-WATCHDOG] ⏳ Ping retry active (1.1.1.1 / 8.8.8.8)... Offline for {duration}s (#{ping_cycle})", flush=True)
-                time.sleep(2)
-            
-            total_offline = int(time.time() - offline_start)
-            print(f"[NET-WATCHDOG] 🚀 NETWORK RESTORED! (Downtime: {total_offline}s). Reconnecting tunnel...", flush=True)
-            
-            # Restart cloudflared cleanly on reconnect
-            if current_process:
-                try:
-                    current_process.terminate()
-                except Exception:
-                    pass
-                current_process = None
-            subprocess.run(["pkill", "-9", "-f", "cloudflared"])
-            time.sleep(1)
-            start_tunnel()
+            downtime = telemetry.wait_for_network_recovery()
+            print(f"[NET-WATCHDOG] 🚀 Network restored after {downtime}s! (Mobile auto-reconnected). Restarting entire server stack...", flush=True)
+            restart_server_and_tunnel()
+            continue
 
         state = get_sync_state()
         now = datetime.now(timezone.utc)
@@ -354,6 +402,13 @@ def run_coordinator():
         if state is None:
             failed_attempts += 1
             print(f"[-] Could not reach Sync DB (Attempt {failed_attempts}).", flush=True)
+            
+            # Check if network went down while reading sync state
+            if not telemetry.is_network_online(timeout=1.5):
+                downtime = telemetry.wait_for_network_recovery()
+                print(f"[NET-WATCHDOG] 🚀 Network restored after {downtime}s! (Mobile auto-reconnected). Restarting entire server stack...", flush=True)
+                restart_server_and_tunnel()
+                continue
             
             # If we fail too many times, assume Master role to keep tunnel online
             if failed_attempts >= 3:
