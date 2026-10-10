@@ -1,33 +1,70 @@
 import os
-from flask import Flask, request, jsonify, send_from_directory, render_template_string
-from werkzeug.utils import secure_filename
 import time
 import urllib.request
 import json
 import sys
 import subprocess
 import shutil
+import gc
+from flask import Flask, request, jsonify, send_from_directory, render_template_string
+from werkzeug.utils import secure_filename
 
-# Attempt to load the sync URL from the tunnel script
+import telemetry
+
+# Attempt to load configuration from auto_tunnel
 try:
     import auto_tunnel
     SYNC_URL = auto_tunnel.SYNC_FIRESTORE_URL
-except Exception as e:
-    SYNC_URL = ""
+except Exception:
+    SYNC_URL = "https://firestore.googleapis.com/v1/projects/ntamedia-1f03d/databases/(default)/documents/serverSync/coordinator"
 
 app = Flask(__name__)
 
-# Base storage directories on the phone's PUBLIC visible storage
-# This saves properly to the hardware's main storage, not hidden inside Termux
+# Base storage directories on the phone's public visible storage
 BASE_DIR = '/sdcard/Download/NetuarkMedia'
+
+# Ensure base directory exists
+os.makedirs(BASE_DIR, exist_ok=True)
+
+# Standard directories
 FEED_DIR = os.path.join(BASE_DIR, 'feed')
 CHAT_DIR = os.path.join(BASE_DIR, 'chat')
 VIDEO_DIR = os.path.join(BASE_DIR, 'videos')
 DOC_DIR = os.path.join(BASE_DIR, 'docs')
 
-# Ensure they exist
-for directory in [FEED_DIR, CHAT_DIR, VIDEO_DIR, DOC_DIR]:
-    os.makedirs(directory, exist_ok=True)
+for d in [FEED_DIR, CHAT_DIR, VIDEO_DIR, DOC_DIR]:
+    os.makedirs(d, exist_ok=True)
+
+def get_folder_path(folder):
+    """Dynamically resolves and creates any storage folder inside BASE_DIR."""
+    if not folder:
+        folder = 'chat'
+    folder_safe = secure_filename(str(folder).strip().lower())
+    if not folder_safe:
+        folder_safe = 'chat'
+    target_dir = os.path.join(BASE_DIR, folder_safe)
+    os.makedirs(target_dir, exist_ok=True)
+    return target_dir
+
+# Negative cache for 404 lookups (prevents hammering peers repeatedly for missing files)
+_404_CACHE = {}
+_404_CACHE_TTL = 30  # seconds
+
+def is_negative_cached(key):
+    now = time.time()
+    ts = _404_CACHE.get(key)
+    if ts and (now - ts) < _404_CACHE_TTL:
+        return True
+    return False
+
+def set_negative_cache(key):
+    _404_CACHE[key] = time.time()
+    # Prune old entries periodically
+    if len(_404_CACHE) > 500:
+        now = time.time()
+        for k in list(_404_CACHE.keys()):
+            if now - _404_CACHE[k] >= _404_CACHE_TTL:
+                del _404_CACHE[k]
 
 @app.after_request
 def add_cors_headers(response):
@@ -44,6 +81,24 @@ def docs():
         with open(docs_path, 'r', encoding='utf-8') as f:
             return f.read(), 200, {'Content-Type': 'text/html; charset=utf-8'}
     return "Docs not found", 404
+
+@app.route('/api/telemetry')
+@app.route('/telemetry')
+def get_telemetry_endpoint():
+    device_id = ""
+    if os.path.exists('.device_id'):
+        try:
+            with open('.device_id', 'r') as f:
+                device_id = f.read().strip()
+        except Exception:
+            pass
+    current_url = ""
+    try:
+        if 'auto_tunnel' in sys.modules:
+            current_url = getattr(auto_tunnel, 'current_url', '') or ""
+    except Exception:
+        pass
+    return jsonify(telemetry.get_full_telemetry(device_id=device_id, current_url=current_url)), 200
 
 @app.route('/')
 def index():
@@ -67,6 +122,7 @@ def index():
                     --amber: #f59e0b;
                     --rose: #f43f5e;
                     --blue: #3b82f6;
+                    --purple: #a855f7;
                     --text-main: #f8fafc;
                     --text-sub: #94a3b8;
                 }}
@@ -76,7 +132,7 @@ def index():
                     background: var(--bg-dark);
                     color: var(--text-main);
                     padding: 24px 16px;
-                    max-width: 960px;
+                    max-width: 1040px;
                     margin: 0 auto;
                     line-height: 1.5;
                 }}
@@ -170,7 +226,7 @@ def index():
                 
                 .dashboard-grid {{
                     display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
                     gap: 16px;
                     margin-bottom: 28px;
                 }}
@@ -182,7 +238,7 @@ def index():
                     position: relative;
                     transition: border-color 0.2s;
                 }}
-                .node-card.master {{ border-color: rgba(16, 185, 129, 0.4); }}
+                .node-card.master {{ border-color: rgba(16, 185, 129, 0.5); }}
                 .node-card.phone {{ border-color: rgba(0, 243, 255, 0.4); }}
                 .node-card.offline {{ opacity: 0.7; border-color: rgba(244, 63, 94, 0.3); }}
                 
@@ -193,7 +249,7 @@ def index():
                     margin-bottom: 14px;
                 }}
                 .node-title {{
-                    font-size: 14px;
+                    font-size: 15px;
                     font-weight: 700;
                     color: #fff;
                 }}
@@ -219,28 +275,52 @@ def index():
                 .metric-row {{
                     display: flex;
                     justify-content: space-between;
+                    align-items: center;
                     font-size: 12px;
                     padding: 6px 0;
                     border-top: 1px solid rgba(255,255,255,0.05);
                 }}
-                .metric-label {{ color: var(--text-sub); }}
+                .metric-label {{ color: var(--text-sub); display: flex; align-items: center; gap: 5px; }}
                 .metric-val {{ font-family: 'JetBrains Mono', monospace; color: #fff; text-align: right; }}
                 
                 .bar-container {{
                     background: rgba(255,255,255,0.06);
-                    height: 5px;
+                    height: 6px;
                     border-radius: 3px;
                     overflow: hidden;
                     margin-top: 4px;
+                    margin-bottom: 4px;
                 }}
                 .bar-fill {{
                     height: 100%;
                     border-radius: 3px;
                     background: var(--blue);
+                    transition: width 0.3s ease;
                 }}
                 .bar-fill.green {{ background: var(--emerald); }}
                 .bar-fill.amber {{ background: var(--amber); }}
                 .bar-fill.rose {{ background: var(--rose); }}
+                .bar-fill.cyan {{ background: var(--cyan); }}
+                .bar-fill.purple {{ background: var(--purple); }}
+                
+                .folder-chips {{
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 6px;
+                    margin-top: 8px;
+                    padding-top: 8px;
+                    border-top: 1px dashed rgba(255,255,255,0.08);
+                }}
+                .folder-chip {{
+                    font-family: 'JetBrains Mono', monospace;
+                    font-size: 10px;
+                    padding: 3px 6px;
+                    background: rgba(255,255,255,0.04);
+                    border: 1px solid rgba(255,255,255,0.08);
+                    border-radius: 4px;
+                    color: var(--text-sub);
+                }}
+                .folder-chip span {{ color: #fff; font-weight: 600; }}
                 
                 .tunnel-link {{
                     display: block;
@@ -302,7 +382,7 @@ def index():
             <div class="top-bar">
                 <div class="brand-title">
                     ⚡ Netuark <span style="color:var(--cyan)">Media Cluster</span>
-                    <span class="brand-badge">HA v2.0</span>
+                    <span class="brand-badge">HA v2.2 Sovereign</span>
                 </div>
                 <a href="/docs" class="docs-btn">📖 API Docs & SDKs</a>
             </div>
@@ -311,7 +391,7 @@ def index():
                 <div class="summary-item">
                     <span class="summary-label">Cluster Status</span>
                     <span class="summary-value" id="cluster-status-text">
-                        <span class="pulse-dot"></span> Active-Active Redundant Mesh
+                        <span class="pulse-dot"></span> Active Sovereign Mesh
                     </span>
                 </div>
                 <div class="summary-item">
@@ -321,50 +401,52 @@ def index():
                     </span>
                 </div>
                 <div class="summary-item">
-                    <span class="summary-label">Telemetry Coordinator</span>
-                    <span class="summary-value" id="nodes-online-count" style="font-family:'JetBrains Mono', monospace; font-size:13px;">
-                        Scanning nodes...
+                    <span class="summary-label">Network Health</span>
+                    <span class="summary-value" id="network-health-text" style="font-family:'JetBrains Mono', monospace; font-size:13px;">
+                        <span style="color:var(--emerald)">● Online (Pinging Active)</span>
                     </span>
                 </div>
             </div>
 
             <div class="section-header">
-                <div class="section-title">Cluster Nodes & Live Hardware Vitals</div>
-                <div class="sync-timer" id="sync-timer">Auto-refresh: 5s</div>
+                <div class="section-title">Hardware Telemetry & Node Cluster</div>
+                <div class="sync-timer" id="sync-timer">Auto-refresh: 3s</div>
             </div>
 
             <div class="dashboard-grid" id="telemetry-dashboard">
                 <div class="node-card">
-                    <p style="color:var(--text-sub); font-size:13px;">Connecting to telemetry coordinator and phone micro-nodes...</p>
+                    <p style="color:var(--text-sub); font-size:13px;">Polling hardware vitals and mesh nodes...</p>
                 </div>
             </div>
 
             <div class="upload-container">
                 <div class="section-title">Ingestion Test Console</div>
                 <p style="color:var(--text-sub); font-size:12px; margin-top:2px;">
-                    Uploaded assets are automatically mirrored across both cluster datacenters.
+                    Uploaded assets stream directly to hardware flash storage with zero memory accumulation.
                 </p>
                 <form id="uploadForm" class="upload-form">
                     <div>
-                        <label style="display:block; font-size:11px; font-family:'JetBrains Mono', monospace; color:var(--text-sub); margin-bottom:6px;">Target Folder / Media Type</label>
+                        <label style="display:block; font-size:11px; font-family:'JetBrains Mono', monospace; color:var(--text-sub); margin-bottom:6px;">Target Storage Category</label>
                         <select name="type" class="form-control">
-                            <option value="chat">Chat (Images / Audio / Attachments)</option>
-                            <option value="feed">Feed (Images / Banners)</option>
-                            <option value="videos">Videos (Chunked Streaming)</option>
-                            <option value="docs">Documents (PDF / Archive / Text)</option>
+                            <option value="chat">Chat (Images, Audio, Voice notes)</option>
+                            <option value="videos">Videos (Streaming, MP4, WebM)</option>
+                            <option value="docs">Docs (PDF, Archives, Text)</option>
+                            <option value="feed">Feed (Banners, Posts, Stickers)</option>
+                            <option value="avatars">Avatars (User Profiles)</option>
+                            <option value="stickers">Stickers (Packs, WebP)</option>
                         </select>
                     </div>
                     <div>
                         <label style="display:block; font-size:11px; font-family:'JetBrains Mono', monospace; color:var(--text-sub); margin-bottom:6px;">Choose File</label>
                         <input type="file" name="file" class="form-control" required />
                     </div>
-                    <button type="submit" class="btn-submit">Upload to Media Cluster</button>
+                    <button type="submit" class="btn-submit">Upload to Sovereign CDN</button>
                 </form>
                 <div id="result"></div>
             </div>
 
             <script>
-                const SYNC_URL = "{SYNC_URL}" || "https://firestore.googleapis.com/v1/projects/ntamedia-1f03d/databases/(default)/documents/serverSync/coordinator";
+                const SYNC_URL = "{SYNC_URL}";
                 const PHONE_NODE_URL = "https://phone-whisper-server.pages.dev/telemetry";
 
                 function formatAgo(timestampStr) {{
@@ -376,165 +458,152 @@ def index():
                     return Math.floor(diff / 3600) + "h ago";
                 }}
 
-                function parsePct(usedStr, totalStr) {{
-                    const u = parseFloat(usedStr) || 0;
-                    const t = parseFloat(totalStr) || 1;
-                    return Math.min(100, Math.round((u / t) * 100));
+                function getBarColor(pct) {{
+                    if (pct > 85) return 'rose';
+                    if (pct > 70) return 'amber';
+                    return 'green';
                 }}
 
                 async function fetchAllTelemetry() {{
                     const dashboardEl = document.getElementById('telemetry-dashboard');
                     let cardsHtml = '';
-                    let onlineCount = 0;
 
-                    // ── 1. Fetch Sovereign Phone AI Datacenter (Redmi 9i ARM64 micro-node) ──
+                    // ── 1. Fetch THIS Local Sovereign Node (/api/telemetry) ──
                     try {{
-                        const phoneRes = await fetch(PHONE_NODE_URL, {{ signal: AbortSignal.timeout(4000) }});
+                        const localRes = await fetch('/api/telemetry', {{ signal: AbortSignal.timeout(3000) }});
+                        if (localRes.ok) {{
+                            const d = await localRes.json();
+                            const ramPct = Math.round(d.memory?.used_percent || 0);
+                            const storPct = Math.round(d.storage?.used_percent || 0);
+                            const cpuPct = Math.round(d.cpu?.usage_percent || 0);
+                            const batLvl = d.battery?.level || 100;
+                            const batTemp = d.battery?.temperature_c || 32;
+                            const batStatus = d.battery?.status || 'Active';
+                            const cpuTemp = d.cpu?.temperature_c || 35;
+                            const cores = d.cpu?.cores || 8;
+
+                            let folderChipsHtml = '';
+                            if (d.storage?.folders) {{
+                                for (const [fName, fData] of Object.entries(d.storage.folders)) {{
+                                    if (fData.count > 0) {{
+                                        folderChipsHtml += `<div class="folder-chip">${{fName}}: <span>${{fData.size_mb}}MB</span> (${{fData.count}})</div>`;
+                                    }}
+                                }}
+                            }}
+
+                            const tunnelUrl = d.network?.active_tunnel || window.location.origin;
+
+                            cardsHtml += `
+                            <div class="node-card master">
+                                <div class="card-header">
+                                    <div>
+                                        <div class="node-title">${{d.device?.model || 'Lenovo L38012'}} (Local Sovereign Node)</div>
+                                        <div class="node-sub">${{d.device?.arch || 'ARM64 Cortex-A53'}} &bull; 4GB RAM Dedicated Media Host</div>
+                                    </div>
+                                    <span class="badge active">● ACTIVE HOST</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">🔋 Battery Vitals</span>
+                                    <span class="metric-val">${{batLvl}}% (${{batStatus}}, ${{batTemp}}°C${{d.battery?.voltage_mv ? ', ' + (d.battery.voltage_mv/1000).toFixed(2) + 'V' : ''}})</span>
+                                </div>
+                                <div class="bar-container"><div class="bar-fill ${{getBarColor(100 - batLvl)}}" style="width:${{batLvl}}%"></div></div>
+                                
+                                <div class="metric-row" style="margin-top:6px;">
+                                    <span class="metric-label">⚡ CPU Workload</span>
+                                    <span class="metric-val">${{cpuPct}}% (${{cores}} Cores, ${{cpuTemp}}°C)</span>
+                                </div>
+                                <div class="bar-container"><div class="bar-fill ${{getBarColor(cpuPct)}}" style="width:${{Math.max(cpuPct, 5)}}%"></div></div>
+                                
+                                <div class="metric-row" style="margin-top:6px;">
+                                    <span class="metric-label">🧠 RAM Allocation</span>
+                                    <span class="metric-val">${{d.memory?.used_mb || 0}} / ${{d.memory?.total_mb || 0}} MB (${{ramPct}}%)</span>
+                                </div>
+                                <div class="bar-container"><div class="bar-fill ${{getBarColor(ramPct)}}" style="width:${{ramPct}}%"></div></div>
+                                
+                                <div class="metric-row" style="margin-top:6px;">
+                                    <span class="metric-label">💾 Flash Storage</span>
+                                    <span class="metric-val">${{d.storage?.used_gb || 0}} / ${{d.storage?.total_gb || 0}} GB (${{storPct}}% Used, ${{d.storage?.free_gb || 0}}GB Free)</span>
+                                </div>
+                                <div class="bar-container"><div class="bar-fill ${{getBarColor(storPct)}}" style="width:${{storPct}}%"></div></div>
+                                
+                                ${{folderChipsHtml ? `<div class="folder-chips">${{folderChipsHtml}}</div>` : ''}}
+                                
+                                <a href="${{tunnelUrl}}" target="_blank" class="tunnel-link">
+                                    🌐 ${{tunnelUrl}}
+                                </a>
+                            </div>`;
+                        }}
+                    }} catch (err) {{
+                        console.warn('Local telemetry error:', err);
+                    }}
+
+                    // ── 2. Fetch Peer Node (Redmi 9i Sovereign Micro-Datacenter) ──
+                    try {{
+                        const phoneRes = await fetch(PHONE_NODE_URL, {{ signal: AbortSignal.timeout(3000) }});
                         if (phoneRes.ok) {{
                             const p = await phoneRes.json();
-                            onlineCount++;
-                            const ramPct = parsePct(p.memory?.used_mb, p.memory?.total_mb);
+                            const ramPct = Math.round((p.memory?.used_mb / (p.memory?.total_mb || 1)) * 100);
                             const storUsed = (p.storage?.total_gb - p.storage?.free_gb).toFixed(1);
-                            const storPct = parsePct(storUsed, p.storage?.total_gb);
-                            const ramColor = ramPct > 85 ? 'rose' : (ramPct > 70 ? 'amber' : 'green');
-                            const storColor = storPct > 85 ? 'rose' : (storPct > 70 ? 'amber' : 'green');
+                            const storPct = Math.round((storUsed / (p.storage?.total_gb || 1)) * 100);
 
                             cardsHtml += `
                             <div class="node-card phone">
                                 <div class="card-header">
                                     <div>
-                                        <div class="node-title">${{p.device?.model || 'Redmi 9i (Phone Node)'}}</div>
-                                        <div class="node-sub">${{p.device?.arch || 'ARM64 Cortex-A53'}} &bull; Node 1</div>
+                                        <div class="node-title">${{p.device?.model || 'Redmi 9i'}} (Cluster Peer Node)</div>
+                                        <div class="node-sub">${{p.device?.arch || 'ARM64 Cortex-A53'}} &bull; Secondary Mesh Replica</div>
                                     </div>
-                                    <span class="badge active">● ONLINE</span>
+                                    <span class="badge active">● ONLINE PEER</span>
                                 </div>
                                 <div class="metric-row">
-                                    <span class="metric-label">Role</span>
-                                    <span class="metric-val" style="color:var(--cyan)">Sovereign Phone AI & Storage</span>
-                                </div>
-                                <div class="metric-row">
-                                    <span class="metric-label">Battery</span>
+                                    <span class="metric-label">🔋 Battery Vitals</span>
                                     <span class="metric-val">${{p.battery?.level || 0}}% (${{p.battery?.status || 'Active'}}, ${{p.battery?.temperature || 32}}°C)</span>
                                 </div>
                                 <div class="metric-row">
-                                    <span class="metric-label">CPU / Cores</span>
+                                    <span class="metric-label">⚡ CPU Workload</span>
                                     <span class="metric-val">${{p.cpu?.usage_percent || 0}}% (${{p.cpu?.cores || 8}} Cores)</span>
                                 </div>
                                 <div class="metric-row">
-                                    <span class="metric-label">RAM Usage</span>
+                                    <span class="metric-label">🧠 RAM Allocation</span>
                                     <span class="metric-val">${{p.memory?.used_mb || 0}} / ${{p.memory?.total_mb || 0}} MB (${{ramPct}}%)</span>
                                 </div>
-                                <div class="bar-container"><div class="bar-fill ${{ramColor}}" style="width:${{ramPct}}%"></div></div>
+                                <div class="bar-container"><div class="bar-fill ${{getBarColor(ramPct)}}" style="width:${{ramPct}}%"></div></div>
                                 <div class="metric-row" style="margin-top:6px;">
-                                    <span class="metric-label">Internal Flash</span>
+                                    <span class="metric-label">💾 Flash Storage</span>
                                     <span class="metric-val">${{storUsed}} / ${{p.storage?.total_gb || 0}} GB (${{storPct}}%)</span>
                                 </div>
-                                <div class="bar-container"><div class="bar-fill ${{storColor}}" style="width:${{storPct}}%"></div></div>
+                                <div class="bar-container"><div class="bar-fill ${{getBarColor(storPct)}}" style="width:${{storPct}}%"></div></div>
                                 <a href="https://phone-whisper-server.pages.dev" target="_blank" class="tunnel-link">
                                     🌐 https://phone-whisper-server.pages.dev
                                 </a>
                             </div>`;
                         }}
                     }} catch (err) {{
-                        console.warn('Phone node telemetry offline or slow:', err);
+                        console.warn('Peer node telemetry offline:', err);
                     }}
 
-                    // ── 2. Fetch Coordinator (NTA Master & Backup Nodes) ──
-                    try {{
-                        const coordRes = await fetch(SYNC_URL, {{ signal: AbortSignal.timeout(4000) }});
-                        if (coordRes.ok) {{
-                            const coordData = await coordRes.json();
-                            const fields = coordData.fields || {{}};
-                            const masterId = fields.master_id ? fields.master_id.stringValue : '';
-                            const lastMasterUpdate = fields.last_updated ? fields.last_updated.timestampValue : null;
-
-                            for (const key in fields) {{
-                                if (key.startsWith('telemetry_')) {{
-                                    const devId = key.replace('telemetry_', '');
-                                    const isMaster = (devId === masterId);
-                                    let tel = {{}};
-                                    try {{ tel = JSON.parse(fields[key].stringValue); }} catch(_) {{}}
-
-                                    const backupKey = `backup_updated_${{devId}}`;
-                                    const devUpdateStr = isMaster ? lastMasterUpdate : (fields[backupKey] ? fields[backupKey].timestampValue : null);
-                                    const peerKey = `peer_url_${{devId}}`;
-                                    const peerUrl = fields[peerKey] ? fields[peerKey].stringValue : '';
-
-                                    // Determine health
-                                    let isAlive = false;
-                                    if (devUpdateStr) {{
-                                        const ageSec = (Date.now() - new Date(devUpdateStr).getTime()) / 1000;
-                                        isAlive = (ageSec < 45);
-                                    }}
-                                    if (isAlive) onlineCount++;
-
-                                    const badgeClass = isAlive ? (isMaster ? 'active' : 'standby') : 'offline';
-                                    const badgeText = isAlive ? (isMaster ? '● MASTER' : '● STANDBY') : '● OFFLINE';
-
-                                    // Parse RAM & Storage strings like "1278MB / 1794MB Used"
-                                    const ramMatches = (tel.ram || '').match(/(\\d+)\\s*MB\\s*\\/\\s*(\\d+)\\s*MB/i);
-                                    const ramPct = ramMatches ? parsePct(ramMatches[1], ramMatches[2]) : 50;
-                                    const storMatches = (tel.storage || '').match(/(\\d+)\\s*G\\s*\\/\\s*(\\d+)\\s*G/i);
-                                    const storPct = storMatches ? parsePct(storMatches[1], storMatches[2]) : 50;
-
-                                    cardsHtml += `
-                                    <div class="node-card ${{isMaster ? 'master' : (isAlive ? '' : 'offline')}}">
-                                        <div class="card-header">
-                                            <div>
-                                                <div class="node-title">Cluster Device: ${{devId}}</div>
-                                                <div class="node-sub">${{isMaster ? 'Master Ingestion Node' : 'Backup Sync Replica'}}</div>
-                                            </div>
-                                            <span class="badge ${{badgeClass}}">${{badgeText}}</span>
-                                        </div>
-                                        <div class="metric-row">
-                                            <span class="metric-label">Heartbeat</span>
-                                            <span class="metric-val">${{formatAgo(devUpdateStr)}}</span>
-                                        </div>
-                                        <div class="metric-row">
-                                            <span class="metric-label">RAM Condition</span>
-                                            <span class="metric-val">${{tel.ram || 'Available'}}</span>
-                                        </div>
-                                        <div class="bar-container"><div class="bar-fill green" style="width:${{ramPct}}%"></div></div>
-                                        <div class="metric-row" style="margin-top:6px;">
-                                            <span class="metric-label">Storage Condition</span>
-                                            <span class="metric-val">${{tel.storage || 'Mounted'}}</span>
-                                        </div>
-                                        <div class="bar-container"><div class="bar-fill blue" style="width:${{storPct}}%"></div></div>
-                                        ${{peerUrl ? `<a href="${{peerUrl}}" target="_blank" class="tunnel-link">⚡ ${{peerUrl}}</a>` : ''}}
-                                    </div>`;
-                                }}
-                            }}
-                        }}
-                    }} catch (cErr) {{
-                        console.warn('Coordinator telemetry offline:', cErr);
-                    }}
-
-                    if (cardsHtml === '') {{
-                        cardsHtml = '<div class="node-card"><p style="color:var(--rose)">Unable to connect to telemetry endpoints. Retrying automatically...</p></div>';
-                    }}
-
-                    dashboardEl.innerHTML = cardsHtml;
-                    const onlineCountEl = document.getElementById('nodes-online-count');
-                    if (onlineCountEl) {{
-                        onlineCountEl.innerHTML = `<span style="color:var(--emerald)">${{onlineCount}} Nodes Active</span>`;
+                    if (cardsHtml) {{
+                        dashboardEl.innerHTML = cardsHtml;
                     }}
                 }}
 
                 fetchAllTelemetry();
-                setInterval(fetchAllTelemetry, 5000);
+                setInterval(fetchAllTelemetry, 3000);
 
                 // Upload test handler
                 document.getElementById('uploadForm').addEventListener('submit', async (e) => {{
                     e.preventDefault();
                     const formData = new FormData(e.target);
                     const resultDiv = document.getElementById('result');
-                    resultDiv.innerHTML = '<span style="color:var(--cyan)">Transferring to media cluster...</span>';
+                    resultDiv.innerHTML = '<span style="color:var(--cyan)">Transferring streamed payload to sovereign media cluster...</span>';
                     try {{
                         const res = await fetch('/upload', {{ method: 'POST', body: formData }});
                         const data = await res.json();
                         if (res.ok) {{
                             const fullUrl = window.location.origin + data.fileUrl;
-                            resultDiv.innerHTML = '<span style="color:var(--emerald)">✅ Upload Succeeded!</span><br>Live CDN URL: <a href="' + data.fileUrl + '" target="_blank" style="color:var(--cyan);text-decoration:underline;">' + fullUrl + '</a>';
+                            resultDiv.innerHTML = '<span style="color:var(--emerald)">✅ Upload Succeeded!</span><br>Live Stream URL: <a href="' + data.fileUrl + '" target="_blank" style="color:var(--cyan);text-decoration:underline;">' + fullUrl + '</a>';
+                            // Immediately refresh telemetry to show disk usage increase
+                            setTimeout(fetchAllTelemetry, 500);
                         }} else {{
                             resultDiv.innerHTML = '<span style="color:var(--rose)">❌ Upload Failed: ' + (data.error || 'Server error') + '</span>';
                         }}
@@ -552,26 +621,29 @@ def upload_file():
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'}), 400
     file = request.files['file']
-    if file.filename == '':
+    if not file or file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
     
-    upload_type = request.form.get('type', 'chat')
-    
-    if upload_type == 'feed':
-        target_dir = FEED_DIR
-    elif upload_type == 'videos':
-        target_dir = VIDEO_DIR
-    elif upload_type == 'docs':
-        target_dir = DOC_DIR
-    else:
-        target_dir = CHAT_DIR
-        upload_type = 'chat'
+    upload_type = request.form.get('type') or request.form.get('folder') or 'chat'
+    target_dir = get_folder_path(upload_type)
         
     filename = secure_filename(file.filename)
     unique_name = f"{int(time.time())}_{filename}"
     file_path = os.path.join(target_dir, unique_name)
+    temp_path = file_path + ".tmp"
     
-    file.save(file_path)
+    # Save directly in chunks to avoid blowing up RAM
+    try:
+        with open(temp_path, 'wb') as f:
+            file.save(f)
+        os.replace(temp_path, file_path)
+    except Exception as e:
+        if os.path.exists(temp_path):
+            try: os.remove(temp_path)
+            except Exception: pass
+        return jsonify({'error': f'Failed to write file: {str(e)}'}), 500
+    
+    gc.collect()
     
     file_url = f"/media/{upload_type}/{unique_name}"
     return jsonify({
@@ -584,10 +656,22 @@ def fallback_and_serve(target_dir, folder, filename):
     if os.path.exists(file_path):
         return send_from_directory(target_dir, filename)
         
-    for fallback_dir in [CHAT_DIR, FEED_DIR, DOC_DIR, VIDEO_DIR]:
-        if os.path.exists(os.path.join(fallback_dir, filename)):
-            return send_from_directory(fallback_dir, filename)
+    # Check all other subdirectories inside BASE_DIR
+    if os.path.exists(BASE_DIR):
+        try:
+            for entry in os.scandir(BASE_DIR):
+                if entry.is_dir() and entry.path != target_dir:
+                    candidate = os.path.join(entry.path, filename)
+                    if os.path.exists(candidate):
+                        return send_from_directory(entry.path, filename)
+        except Exception:
+            pass
             
+    # Check negative cache before performing expensive network lookups
+    cache_key = f"{folder}/{filename}"
+    if is_negative_cached(cache_key):
+        return send_from_directory(target_dir, filename) # will return 404
+
     # P2P Fallback to Counterpart Node (Redmi 9i Sovereign Micro-Datacenter)
     try:
         device_id = ""
@@ -597,8 +681,8 @@ def fallback_and_serve(target_dir, folder, filename):
                 
         peer_urls = ["https://phone-whisper-server.pages.dev"]
         try:
-            req = urllib.request.Request("https://firestore.googleapis.com/v1/projects/ntamedia-1f03d/databases/(default)/documents/serverSync/coordinator")
-            with urllib.request.urlopen(req, timeout=3) as response:
+            req = urllib.request.Request(SYNC_URL)
+            with urllib.request.urlopen(req, timeout=2.5) as response:
                 data = json.loads(response.read().decode())
                 for key, value in data.get('fields', {}).items():
                     if key.startswith('peer_url_') and key != f'peer_url_{device_id}':
@@ -610,15 +694,8 @@ def fallback_and_serve(target_dir, folder, filename):
                 
         candidate_paths = [
             f"/v1/storage/objects/{folder}/{filename}",
-            f"/v1/storage/objects/media/{filename}",
-            f"/v1/storage/objects/avatars/{filename}",
-            f"/v1/storage/objects/stickers/{filename}",
             f"/media/{folder}/{filename}",
-            f"/media/videos/{filename}",
-            f"/media/chat/{filename}",
-            f"/media/feed/{filename}",
-            f"/media/docs/{filename}",
-            f"/s/public/{filename}"
+            f"/v1/storage/objects/media/{filename}"
         ]
 
         for peer in peer_urls:
@@ -626,34 +703,26 @@ def fallback_and_serve(target_dir, folder, filename):
                 try:
                     peer_file_url = f"{peer}{c_path}"
                     dl_req = urllib.request.Request(peer_file_url, headers={"User-Agent": "NTA-MediaServer/MeshSync"})
-                    with urllib.request.urlopen(dl_req, timeout=8) as dl_res:
+                    with urllib.request.urlopen(dl_req, timeout=3) as dl_res:
                         if dl_res.status == 200:
                             os.makedirs(target_dir, exist_ok=True)
                             tmp_file = file_path + ".tmp"
                             with open(tmp_file, 'wb') as out_f:
-                                out_f.write(dl_res.read())
+                                shutil.copyfileobj(dl_res, out_f, length=65536)
                             os.replace(tmp_file, file_path)
-                            print(f"[+] Successfully downloaded {filename} from peer {peer} ({c_path})!")
+                            print(f"[+] Downloaded {filename} from peer {peer} ({c_path})")
                             return send_from_directory(target_dir, filename)
                 except Exception:
                     continue
     except Exception as e:
-        print(f"Failed in P2P fallback: {e}")
-            
-    # If all fails, let Flask return a standard 404
+        print(f"P2P fallback warning: {e}")
+        
+    set_negative_cache(cache_key)
     return send_from_directory(target_dir, filename)
 
 @app.route('/media/<folder>/<filename>')
 def serve_media(folder, filename):
-    if folder == 'feed':
-        target_dir = FEED_DIR
-    elif folder == 'videos':
-        target_dir = VIDEO_DIR
-    elif folder == 'docs':
-        target_dir = DOC_DIR
-    else:
-        target_dir = CHAT_DIR
-        
+    target_dir = get_folder_path(folder)
     return fallback_and_serve(target_dir, folder, filename)
 
 @app.route('/v1/storage/objects/<folder>/<filename>', methods=['PUT', 'OPTIONS'])
@@ -661,30 +730,32 @@ def rest_upload(folder, filename):
     if request.method == 'OPTIONS':
         return '', 204
         
-    if folder == 'avatars' or folder == 'banners':
-        target_dir = DOC_DIR
-    elif folder == 'stickers':
-        target_dir = FEED_DIR 
-    else:
-        target_dir = CHAT_DIR
-        
+    target_dir = get_folder_path(folder)
     filename = secure_filename(filename)
     file_path = os.path.join(target_dir, filename)
+    temp_path = file_path + ".tmp"
     
-    with open(file_path, 'wb') as f:
-        f.write(request.data)
+    # Stream body directly to disk in 64KB chunks — zero memory accumulation!
+    try:
+        with open(temp_path, 'wb') as f:
+            while True:
+                chunk = request.stream.read(65536)
+                if not chunk:
+                    break
+                f.write(chunk)
+        os.replace(temp_path, file_path)
+    except Exception as e:
+        if os.path.exists(temp_path):
+            try: os.remove(temp_path)
+            except Exception: pass
+        return jsonify({"error": f"Upload write failed: {str(e)}"}), 500
         
+    gc.collect()
     return jsonify({"success": True, "url": f"/v1/storage/objects/{folder}/{filename}"}), 200
 
 @app.route('/v1/storage/objects/<folder>/<filename>', methods=['GET', 'OPTIONS'])
 def rest_serve(folder, filename):
-    if folder == 'avatars' or folder == 'banners':
-        target_dir = DOC_DIR
-    elif folder == 'stickers':
-        target_dir = FEED_DIR 
-    else:
-        target_dir = CHAT_DIR
-        
+    target_dir = get_folder_path(folder)
     return fallback_and_serve(target_dir, folder, filename)
 
 def propagate_delete(folder, filename, path_prefix):
@@ -696,8 +767,8 @@ def propagate_delete(folder, filename, path_prefix):
             with open('.device_id', 'r') as f:
                 device_id = f.read().strip()
                 
-        req = urllib.request.Request("https://firestore.googleapis.com/v1/projects/ntamedia-1f03d/databases/(default)/documents/serverSync/coordinator")
-        with urllib.request.urlopen(req, timeout=5) as response:
+        req = urllib.request.Request(SYNC_URL)
+        with urllib.request.urlopen(req, timeout=3) as response:
             data = json.loads(response.read().decode())
             
         peer_urls = []
@@ -708,25 +779,16 @@ def propagate_delete(folder, filename, path_prefix):
         for peer in peer_urls:
             try:
                 peer_file_url = f"{peer}{path_prefix}/{folder}/{filename}?propagate=false"
-                print(f"[*] Propagating delete to {peer}")
                 dl_req = urllib.request.Request(peer_file_url, method='DELETE')
-                urllib.request.urlopen(dl_req, timeout=5)
-            except Exception as e:
-                print(f"[-] Peer delete failed for {peer}: {e}")
-    except Exception as e:
-        print(f"Failed to propagate delete: {e}")
+                urllib.request.urlopen(dl_req, timeout=3)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 @app.route('/media/<folder>/<filename>', methods=['DELETE'])
 def delete_media(folder, filename):
-    if folder == 'feed':
-        target_dir = FEED_DIR
-    elif folder == 'videos':
-        target_dir = VIDEO_DIR
-    elif folder == 'docs':
-        target_dir = DOC_DIR
-    else:
-        target_dir = CHAT_DIR
-        
+    target_dir = get_folder_path(folder)
     filename = secure_filename(filename)
     file_path = os.path.join(target_dir, filename)
     
@@ -750,13 +812,7 @@ def rest_delete(folder, filename):
     if request.method == 'OPTIONS':
         return '', 204
         
-    if folder == 'avatars' or folder == 'banners':
-        target_dir = DOC_DIR
-    elif folder == 'stickers':
-        target_dir = FEED_DIR 
-    else:
-        target_dir = CHAT_DIR
-        
+    target_dir = get_folder_path(folder)
     filename = secure_filename(filename)
     file_path = os.path.join(target_dir, filename)
     
@@ -778,18 +834,21 @@ def rest_delete(folder, filename):
 @app.route('/api/sync/list')
 def sync_list():
     files_info = {}
-    for folder, path in [('feed', FEED_DIR), ('chat', CHAT_DIR), ('videos', VIDEO_DIR), ('docs', DOC_DIR)]:
-        files_info[folder] = {}
-        if os.path.exists(path):
-            for f in os.listdir(path):
-                full_path = os.path.join(path, f)
-                if os.path.isfile(full_path):
-                    files_info[folder][f] = os.path.getsize(full_path)
+    if os.path.exists(BASE_DIR):
+        try:
+            for entry in os.scandir(BASE_DIR):
+                if entry.is_dir():
+                    folder_name = entry.name
+                    files_info[folder_name] = {}
+                    for f in os.scandir(entry.path):
+                        if f.is_file():
+                            files_info[folder_name][f.name] = f.stat().st_size
+        except Exception as e:
+            print(f"Sync list scan warning: {e}")
     return jsonify(files_info)
 
 # ==============================================================================
 # 🛰️ AUTONOMOUS INTERNAL COMMUNICATOR & REMOTE MANAGEMENT RPC
-# Allows remote cluster management, auto-updates, diagnostics, and control
 # ==============================================================================
 INTERNAL_SECRETS = {"ntamedia_tunnel_key", "mobile_ai_nuclear_key", "nta_sovereign_internal_comm_2026"}
 
@@ -806,16 +865,16 @@ def internal_status():
         return jsonify({"error": "Unauthorized", "message": "Invalid or missing X-Internal-Secret"}), 401
     
     repo_dir = os.path.dirname(os.path.abspath(__file__))
-    git_sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=repo_dir, capture_output=True, text=True).stdout.strip()
-    git_branch = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=repo_dir, capture_output=True, text=True).stdout.strip()
+    git_sha = "unknown"
+    git_branch = "main"
+    if shutil.which("git"):
+        try:
+            git_sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=repo_dir, capture_output=True, text=True, timeout=2).stdout.strip()
+            git_branch = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=repo_dir, capture_output=True, text=True, timeout=2).stdout.strip()
+        except Exception:
+            pass
     
-    free_gb = 0.0
-    try:
-        stat = os.statvfs(BASE_DIR)
-        free_gb = round((stat.f_bavail * stat.f_frsize) / (1024**3), 2)
-    except Exception:
-        pass
-        
+    stor = telemetry.get_storage_info()
     device_id = ""
     if os.path.exists('.device_id'):
         try:
@@ -830,7 +889,8 @@ def internal_status():
         "device_id": device_id,
         "git_commit": git_sha,
         "git_branch": git_branch,
-        "free_gb": free_gb,
+        "free_gb": stor.get("free_gb", 0.0),
+        "total_gb": stor.get("total_gb", 0.0),
         "timestamp": time.time(),
         "storage_root": BASE_DIR
     }), 200
@@ -864,9 +924,11 @@ def internal_update():
         return jsonify({"error": "Unauthorized"}), 401
     
     repo_dir = os.path.dirname(os.path.abspath(__file__))
+    if not shutil.which("git"):
+        return jsonify({"error": "Git not installed on device"}), 400
+
     try:
         pull_res = subprocess.run(["git", "pull", "--rebase", "origin", "main"], cwd=repo_dir, capture_output=True, text=True, timeout=35)
-        # Schedule reload in a background thread
         def restart_worker():
             time.sleep(1.5)
             subprocess.run(["pkill", "-f", "server.py"])

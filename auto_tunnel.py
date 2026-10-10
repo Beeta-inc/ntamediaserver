@@ -6,8 +6,12 @@ import json
 import uuid
 import sys
 import os
-from datetime import datetime
+import shutil
+from datetime import datetime, timezone
 import concurrent.futures
+import threading
+
+import telemetry
 
 # ---------------- CONFIGURATION ----------------
 # The MAIN Firebase that your app reads the URL from
@@ -35,6 +39,9 @@ current_process = None
 current_url = None
 last_pushed_url = None
 
+def get_utc_iso():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
 def register_with_pages(url):
     """Hit the Cloudflare Pages edge function so it immediately knows the new tunnel URL."""
     try:
@@ -57,7 +64,7 @@ GITHUB_FILE = "endpoint.json"
 def push_endpoint_json(url):
     """Update endpoint.json on GitHub via REST API — works on phone with no git setup."""
     import base64
-    new_content = json.dumps({"endpoint": url, "updated_at": datetime.utcnow().isoformat() + "Z"}, indent=2)
+    new_content = json.dumps({"endpoint": url, "updated_at": get_utc_iso()}, indent=2)
     encoded = base64.b64encode(new_content.encode()).decode()
     api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE}"
     headers_dict = {
@@ -99,46 +106,12 @@ def get_sync_state():
                 result['last_updated'] = '1970-01-01T00:00:00Z'
             return result
     except Exception as e:
-        print(f"[!] Warning: Could not read sync state from secondary Firebase: {e}")
+        print(f"[!] Warning: Could not read sync state from secondary Firebase: {e}", flush=True)
         return None
 
 def get_telemetry():
-    telemetry = {'battery': 'Unknown', 'network': 'Unknown', 'ram': 'Unknown', 'storage': 'Unknown'}
-    try:
-        bat_out = subprocess.check_output(['termux-battery-status'], text=True, stderr=subprocess.DEVNULL, timeout=2)
-        bat = json.loads(bat_out)
-        telemetry['battery'] = f"{bat.get('percentage', 0)}% ({bat.get('status', 'Unknown')})"
-    except: pass
-    
-    try:
-        wifi_out = subprocess.check_output(['termux-wifi-connectioninfo'], text=True, stderr=subprocess.DEVNULL, timeout=2)
-        wifi = json.loads(wifi_out)
-        if wifi.get('supplicant_state') == 'COMPLETED':
-            telemetry['network'] = f"{wifi.get('ssid', 'Connected')} ({wifi.get('rssi', 0)} dBm, {wifi.get('link_speed_mbps', 0)} Mbps)"
-        else:
-            telemetry['network'] = 'Disconnected'
-    except: pass
-    
-    try:
-        free_out = subprocess.check_output(['free', '-m'], text=True, stderr=subprocess.DEVNULL, timeout=2)
-        lines = free_out.strip().split('\n')
-        if len(lines) > 1:
-            parts = lines[1].split()
-            if len(parts) >= 3:
-                telemetry['ram'] = f"{parts[2]}MB / {parts[1]}MB Used"
-    except: pass
-    
-    try:
-        # Get storage for the main partition where /sdcard lives, usually /data
-        df_out = subprocess.check_output(['df', '-h', '/data'], text=True, stderr=subprocess.DEVNULL, timeout=2)
-        lines = df_out.strip().split('\n')
-        if len(lines) > 1:
-            parts = lines[1].split()
-            if len(parts) >= 4:
-                telemetry['storage'] = f"{parts[2]} / {parts[1]} Used ({parts[4]})"
-    except: pass
-    
-    return json.dumps(telemetry)
+    """Reads telemetry safely using telemetry.py (zero process leaks)."""
+    return telemetry.get_telemetry_summary()
 
 def update_sync_state(role):
     telemetry_json = get_telemetry()
@@ -152,13 +125,14 @@ def update_sync_state(role):
     }
     update_paths = f"updateMask.fieldPaths={telemetry_field}"
     
+    now_iso = get_utc_iso()
     if role == "master":
         data["fields"]["master_id"] = {"stringValue": DEVICE_ID}
-        data["fields"]["last_updated"] = {"timestampValue": datetime.utcnow().isoformat() + "Z"}
+        data["fields"]["last_updated"] = {"timestampValue": now_iso}
         update_paths += "&updateMask.fieldPaths=master_id&updateMask.fieldPaths=last_updated"
     else:
         backup_updated_field = f"backup_updated_{DEVICE_ID}"
-        data["fields"][backup_updated_field] = {"timestampValue": datetime.utcnow().isoformat() + "Z"}
+        data["fields"][backup_updated_field] = {"timestampValue": now_iso}
         update_paths += f"&updateMask.fieldPaths={backup_updated_field}"
         
     if current_url:
@@ -171,7 +145,7 @@ def update_sync_state(role):
         req.add_header('Content-Type', 'application/json')
         urllib.request.urlopen(req, timeout=5)
     except Exception as e:
-        print(f"[!] Warning: Failed to update secondary Firebase: {e}")
+        print(f"[!] Warning: Failed to update secondary Firebase: {e}", flush=True)
 
 def update_main_firebase(url):
     # Guard: Never overwrite main Firebase with ephemeral trycloudflare.com tunnels!
@@ -183,7 +157,7 @@ def update_main_firebase(url):
     data = {
         "fields": {
             "url": {"stringValue": url},
-            "updatedAt": {"timestampValue": datetime.utcnow().isoformat() + "Z"}
+            "updatedAt": {"timestampValue": get_utc_iso()}
         }
     }
     patch_url = MAIN_FIRESTORE_URL + "?updateMask.fieldPaths=url&updateMask.fieldPaths=updatedAt"
@@ -194,8 +168,6 @@ def update_main_firebase(url):
         print(f"\n[+] Successfully updated MAIN Firebase with new URL: {url}\n", flush=True)
     except Exception as e:
         print(f"\n[-] Failed to update MAIN Firebase: {e}\n", flush=True)
-
-import threading
 
 def read_cloudflared_output(process):
     global current_url
@@ -213,25 +185,28 @@ def read_cloudflared_output(process):
 
 def start_tunnel():
     global current_process, current_url
-    if current_process is not None:
+    if current_process is not None and current_process.poll() is None:
         return # Already running
         
-    print("[*] Starting Cloudflare Tunnel...")
+    print("[*] Starting Cloudflare Tunnel...", flush=True)
     current_url = None
-    current_process = subprocess.Popen(
-        ["cloudflared", "tunnel", "--url", "http://localhost:3000"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True
-    )
-    
-    # Read output in a background thread so we don't block the coordinator loop!
-    t = threading.Thread(target=read_cloudflared_output, args=(current_process,))
-    t.daemon = True
-    t.start()
+    try:
+        current_process = subprocess.Popen(
+            ["cloudflared", "tunnel", "--url", "http://localhost:3000"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True
+        )
+        
+        # Read output in a background thread so we don't block coordinator loop!
+        t = threading.Thread(target=read_cloudflared_output, args=(current_process,))
+        t.daemon = True
+        t.start()
+    except Exception as e:
+        print(f"[!] Error starting cloudflared: {e}", flush=True)
 
 def _download_sync_file(peer_url, folder, f, local_path):
-    print(f"[*] Built-in Sync: Downloading missing file {folder}/{f} from {peer_url}")
+    print(f"[*] Built-in Sync: Downloading missing file {folder}/{f} from {peer_url}", flush=True)
     candidate_urls = [
         f"{peer_url}/v1/storage/objects/{folder}/{f}",
         f"{peer_url}/media/{folder}/{f}",
@@ -240,13 +215,14 @@ def _download_sync_file(peer_url, folder, f, local_path):
     for dl_url in candidate_urls:
         try:
             dl_req = urllib.request.Request(dl_url, headers={"User-Agent": "NTA-Sync/2.0"})
-            with urllib.request.urlopen(dl_req, timeout=30) as dl_res:
+            with urllib.request.urlopen(dl_req, timeout=25) as dl_res:
                 if dl_res.status == 200:
                     tmp_p = local_path + ".tmp"
+                    # Stream download in chunks to avoid blowing up RAM!
                     with open(tmp_p, 'wb') as out_f:
-                        out_f.write(dl_res.read())
+                        shutil.copyfileobj(dl_res, out_f, length=65536)
                     os.replace(tmp_p, local_path)
-                    print(f"[+] Built-in Sync: Successfully saved {folder}/{f}")
+                    print(f"[+] Built-in Sync: Successfully saved {folder}/{f}", flush=True)
                     return
         except Exception:
             continue
@@ -255,9 +231,11 @@ def sync_files_loop():
     BASE_DIR = '/sdcard/Download/NetuarkMedia'
     while True:
         try:
+            if not telemetry.is_network_online(timeout=1.0):
+                time.sleep(15)
+                continue
+
             state = get_sync_state() or {}
-            
-            # Symmetrical Mesh: Check both permanent peer and dynamic coordinator peers
             peer_candidates = ["https://phone-whisper-server.pages.dev"]
             for k, val in state.items():
                 if k.startswith('peer_url_') and k != f'peer_url_{DEVICE_ID}':
@@ -282,24 +260,30 @@ def sync_files_loop():
                                 download_tasks.append((peer_url, folder, f, local_path))
                     
                     if download_tasks:
-                        print(f"[*] Built-in Sync: Found {len(download_tasks)} missing files from {peer_url}. Downloading batch...")
-                        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                        print(f"[*] Built-in Sync: Found {len(download_tasks)} missing files from {peer_url}. Downloading batch...", flush=True)
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
                             futures = [executor.submit(_download_sync_file, *task) for task in download_tasks[:10]]
                             concurrent.futures.wait(futures)
-                        print("[*] Built-in Sync: Batch download complete.")
-                except Exception as peer_err:
+                        print("[*] Built-in Sync: Batch download complete.", flush=True)
+                except Exception:
                     pass
-        except Exception as e:
+        except Exception:
             pass
         time.sleep(20)
 
 def auto_git_update_loop():
     """Autonomous Internal Communicator: monitors GitHub repo for new commits, pulls updates, and reloads server."""
+    if not shutil.which("git"):
+        print("[COMMUNICATOR] ℹ️ Git binary not detected on this device. Auto-git pull watchdog disabled.", flush=True)
+        return
+
     print("[COMMUNICATOR] 🛡️ Autonomous Auto-Update Watchdog active (polling origin/main every 30s)...", flush=True)
     repo_dir = os.path.dirname(os.path.abspath(__file__))
     while True:
         try:
             time.sleep(30)
+            if not telemetry.is_network_online(timeout=1.0):
+                continue
             res = subprocess.run(["git", "ls-remote", "origin", "refs/heads/main"], cwd=repo_dir, capture_output=True, text=True, timeout=15)
             if res.returncode == 0 and res.stdout.strip():
                 remote_sha = res.stdout.strip().split()[0]
@@ -315,14 +299,14 @@ def auto_git_update_loop():
                     time.sleep(1.5)
                     subprocess.Popen([sys.executable, os.path.join(repo_dir, "server.py")], cwd=repo_dir)
                     print("[COMMUNICATOR] Server restarted successfully!", flush=True)
-        except Exception as e:
+        except Exception:
             pass
 
 def run_coordinator():
     global current_process, last_pushed_url
-    print(f"Starting HA Tunnel Coordinator. Device ID: {DEVICE_ID}")
+    print(f"Starting HA Tunnel Coordinator. Device ID: {DEVICE_ID}", flush=True)
     
-    # Start our own P2P tunnel unconditionally!
+    # Start our own P2P tunnel
     start_tunnel()
     
     # Start the built-in background file synchronizer
@@ -335,17 +319,45 @@ def run_coordinator():
     watchdog_thread.daemon = True
     watchdog_thread.start()
     
+    failed_attempts = 0
+
     while True:
+        # ── 🌐 Network Watchdog with Ping Reconnect ──
+        if not telemetry.is_network_online(timeout=1.5):
+            print("\n[NET-WATCHDOG] ⚠️ Network offline! Starting continuous ping loop until network is restored...", flush=True)
+            offline_start = time.time()
+            ping_cycle = 0
+            while not telemetry.is_network_online(timeout=2.0):
+                ping_cycle += 1
+                if ping_cycle % 5 == 1:
+                    duration = int(time.time() - offline_start)
+                    print(f"[NET-WATCHDOG] ⏳ Ping retry active (1.1.1.1 / 8.8.8.8)... Offline for {duration}s (#{ping_cycle})", flush=True)
+                time.sleep(2)
+            
+            total_offline = int(time.time() - offline_start)
+            print(f"[NET-WATCHDOG] 🚀 NETWORK RESTORED! (Downtime: {total_offline}s). Reconnecting tunnel...", flush=True)
+            
+            # Restart cloudflared cleanly on reconnect
+            if current_process:
+                try:
+                    current_process.terminate()
+                except Exception:
+                    pass
+                current_process = None
+            subprocess.run(["pkill", "-9", "-f", "cloudflared"])
+            time.sleep(1)
+            start_tunnel()
+
         state = get_sync_state()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         if state is None:
             failed_attempts += 1
-            print(f"[-] Could not reach Sync DB (Attempt {failed_attempts}).")
+            print(f"[-] Could not reach Sync DB (Attempt {failed_attempts}).", flush=True)
             
-            # If we fail too many times, just assume Master role to keep the server alive!
+            # If we fail too many times, assume Master role to keep tunnel online
             if failed_attempts >= 3:
-                print("[!] Sync DB unreachable for too long. Assuming MASTER role to keep server online.")
+                print("[!] Sync DB unreachable for too long. Assuming MASTER role to keep server online.", flush=True)
                 start_tunnel()
                 if current_process and current_process.poll() is not None:
                     current_process = None
@@ -354,61 +366,59 @@ def run_coordinator():
             time.sleep(HEARTBEAT_INTERVAL)
             continue
             
-        # Reset failed attempts on success
         failed_attempts = 0
         
-        last_updated_str = state['last_updated'].replace('Z', '')
-        # Handle microsecond parsing
-        if '.' in last_updated_str:
-            last_updated = datetime.strptime(last_updated_str, "%Y-%m-%dT%H:%M:%S.%f")
-        else:
-            last_updated = datetime.strptime(last_updated_str, "%Y-%m-%dT%H:%M:%S")
+        last_updated_str = state.get('last_updated', '1970-01-01T00:00:00Z').replace('Z', '')
+        try:
+            if '.' in last_updated_str:
+                last_updated = datetime.strptime(last_updated_str, "%Y-%m-%dT%H:%M:%S.%f").replace(tzinfo=timezone.utc)
+            else:
+                last_updated = datetime.strptime(last_updated_str, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+        except Exception:
+            last_updated = datetime(1970, 1, 1, tzinfo=timezone.utc)
             
         age_seconds = (now - last_updated).total_seconds()
         
-        # Check if we should be master
         is_master_dead = age_seconds > TIMEOUT_THRESHOLD
-        am_i_master = (state['master_id'] == DEVICE_ID)
+        am_i_master = (state.get('master_id') == DEVICE_ID)
         
         if is_master_dead or am_i_master:
-            # I am the master, or taking over!
             if not am_i_master:
-                print(f"[!] Master died! Taking over as new MASTER. (Age: {age_seconds}s)")
+                print(f"[!] Master died! Taking over as new MASTER. (Age: {int(age_seconds)}s)", flush=True)
             else:
-                # I am already the Master. Let's check on the backups!
                 for key, val in state.items():
                     if key.startswith('backup_updated_'):
                         backup_id = key.replace('backup_updated_', '')
-                        backup_last_str = val.replace('Z', '')
-                        if '.' in backup_last_str:
-                            backup_last = datetime.strptime(backup_last_str, "%Y-%m-%dT%H:%M:%S.%f")
-                        else:
-                            backup_last = datetime.strptime(backup_last_str, "%Y-%m-%dT%H:%M:%S")
-                        
-                        backup_age = (now - backup_last).total_seconds()
-                        if backup_age > TIMEOUT_THRESHOLD * 2:
-                            print(f"[!] WARNING: Backup Server {backup_id} is OFFLINE! (No heartbeat for {int(backup_age)}s). Please start it!")
-                        else:
-                            print(f"[+] Backup Server {backup_id} is ONLINE (Ping: {int(backup_age)}s ago).")
+                        backup_last_str = str(val).replace('Z', '')
+                        try:
+                            if '.' in backup_last_str:
+                                backup_last = datetime.strptime(backup_last_str, "%Y-%m-%dT%H:%M:%S.%f").replace(tzinfo=timezone.utc)
+                            else:
+                                backup_last = datetime.strptime(backup_last_str, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+                            backup_age = (now - backup_last).total_seconds()
+                            if backup_age > TIMEOUT_THRESHOLD * 2:
+                                print(f"[!] WARNING: Backup Server {backup_id} is OFFLINE! (No heartbeat for {int(backup_age)}s).", flush=True)
+                            else:
+                                print(f"[+] Backup Server {backup_id} is ONLINE (Ping: {int(backup_age)}s ago).", flush=True)
+                        except Exception:
+                            pass
             
             update_sync_state("master")
             if current_url and current_url != last_pushed_url:
                 update_main_firebase(current_url)
                 last_pushed_url = current_url
             
-            # If process died unexpectedly, restart it
             if current_process and current_process.poll() is not None:
-                print("Tunnel crashed. Restarting...")
+                print("Tunnel crashed. Restarting...", flush=True)
                 current_process = None
                 start_tunnel()
                 
         else:
-            # I am backup
-            print(f"[-] Standing by as BACKUP. Master {state['master_id']} is alive (Ping: {int(age_seconds)}s ago).")
+            print(f"[-] Standing by as BACKUP. Master {state.get('master_id')} is alive (Ping: {int(age_seconds)}s ago).", flush=True)
             update_sync_state("backup")
             
             if current_process and current_process.poll() is not None:
-                print("Backup Tunnel crashed. Restarting...")
+                print("Backup Tunnel crashed. Restarting...", flush=True)
                 current_process = None
                 start_tunnel()
             
@@ -418,7 +428,7 @@ if __name__ == "__main__":
     try:
         run_coordinator()
     except KeyboardInterrupt:
-        print("\nExiting...")
+        print("\nExiting...", flush=True)
         if current_process:
             current_process.terminate()
             subprocess.run(["pkill", "-f", "cloudflared"])
