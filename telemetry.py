@@ -265,6 +265,22 @@ def get_device_info():
         "uptime_sec": uptime_sec
     }
 
+def is_process_running(proc_name):
+    """Checks if a process is running without spawning external binaries."""
+    try:
+        for pid in os.listdir('/proc'):
+            if pid.isdigit():
+                try:
+                    with open(f'/proc/{pid}/cmdline', 'rb') as f:
+                        cmd = f.read().replace(b'\x00', b' ').decode('utf-8', errors='ignore')
+                        if proc_name in cmd:
+                            return True
+                except (FileNotFoundError, PermissionError, ProcessLookupError):
+                    continue
+    except Exception:
+        pass
+    return False
+
 def get_telemetry_summary():
     """Returns compact JSON string formatted for Firestore coordinator node registry."""
     mem = get_memory_info()

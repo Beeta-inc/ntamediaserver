@@ -977,13 +977,7 @@ def standalone_network_watchdog():
     while True:
         try:
             # Check if auto_tunnel is actively running (which handles coordinator restart)
-            is_tunnel_running = False
-            try:
-                res = subprocess.run(["pgrep", "-f", "auto_tunnel.py"], capture_output=True, text=True, timeout=2)
-                if res.returncode == 0 and res.stdout.strip():
-                    is_tunnel_running = True
-            except Exception:
-                pass
+            is_tunnel_running = telemetry.is_process_running("auto_tunnel.py")
                 
             if is_tunnel_running:
                 # auto_tunnel supervisor handles network recovery and server restart
