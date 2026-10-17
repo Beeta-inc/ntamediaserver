@@ -11,13 +11,14 @@
 termux-wake-lock 2>/dev/null || true
 pkill -9 -f termux-api 2>/dev/null || true
 
-# Clean existing instances
-pkill -f server.py 2>/dev/null || true
-pkill -f auto_tunnel.py 2>/dev/null || true
-pkill -f search_server.py 2>/dev/null || true
-pkill -f search_tunnel.py 2>/dev/null || true
-pkill -f 'chromium.*remote-debugging-port' 2>/dev/null || true
-pkill -f cloudflared 2>/dev/null || true
+# Clean existing instances cleanly with targeted patterns
+pkill -9 -f 'ntamediaserver/server\.py' 2>/dev/null || true
+pkill -9 -f 'auto_tunnel\.py' 2>/dev/null || true
+pkill -9 -f 'ntawebsearchapi/search_server\.py' 2>/dev/null || true
+pkill -9 -f 'search_tunnel\.py' 2>/dev/null || true
+pkill -9 -f 'chromium.*9222' 2>/dev/null || true
+pkill -9 -f 'cloudflared.*3000' 2>/dev/null || true
+pkill -9 -f 'cloudflared.*3001' 2>/dev/null || true
 sleep 1
 
 # Resolve directories
@@ -80,7 +81,10 @@ fi
 # ──────────────────────────────────────────────────────────────
 # 2. Start Headless Chromium Sandbox (Port 9222 CDP)
 # ──────────────────────────────────────────────────────────────
-CHROMIUM_BIN=$(command -v chromium 2>/dev/null || command -v chromium-browser 2>/dev/null || echo "")
+CHROMIUM_BIN=$(command -v chromium 2>/dev/null || command -v chrome 2>/dev/null || command -v chromium-browser 2>/dev/null || echo "")
+if [ -z "$CHROMIUM_BIN" ] && [ -x "/data/data/com.termux/files/usr/bin/chrome" ]; then
+    CHROMIUM_BIN="/data/data/com.termux/files/usr/bin/chrome"
+fi
 if [ -n "$CHROMIUM_BIN" ]; then
     echo "[3/4] Launching Headless Chromium Sandbox on CDP Port 9222..."
     nohup "$CHROMIUM_BIN" \
@@ -96,6 +100,10 @@ if [ -n "$CHROMIUM_BIN" ]; then
         --remote-debugging-port=9222 \
         --remote-debugging-address=127.0.0.1 \
         --user-data-dir="$HOME/.config/nta-chromium-sandbox" \
+        --window-size=1280,800 \
+        --blink-settings=imagesEnabled=false \
+        --disable-blink-features=AutomationControlled \
+        --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36" \
         about:blank > chromium_cdp.log 2>&1 &
     CHROMIUM_PID=$!
 

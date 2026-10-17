@@ -182,17 +182,19 @@ def read_cloudflared_output(process):
                 threading.Thread(target=register_with_pages, args=(current_url,), daemon=True).start()
                 # Push endpoint.json to GitHub so Pages cold-starts can find the URL
                 threading.Thread(target=push_endpoint_json, args=(current_url,), daemon=True).start()
+                # Update Firestore coordinator immediately
+                threading.Thread(target=update_sync_state, args=("master",), daemon=True).start()
 
 def start_tunnel():
     global current_process, current_url
     if current_process is not None and current_process.poll() is None:
         return # Already running
         
-    print("[*] Starting Cloudflare Tunnel...", flush=True)
+    print("[*] Starting Cloudflare Tunnel for Media Server (port 3000)...", flush=True)
     current_url = None
     try:
         current_process = subprocess.Popen(
-            ["cloudflared", "tunnel", "--url", "http://localhost:3000"],
+            ["cloudflared", "tunnel", "--url", "http://127.0.0.1:3000"],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True
@@ -302,6 +304,36 @@ def auto_git_update_loop():
         except Exception:
             pass
 
+def ensure_server_running():
+    """Verifies that server.py is actively listening on port 3000; respawns if crashed."""
+    import socket
+    try:
+        s = socket.create_connection(("127.0.0.1", 3000), timeout=1)
+        s.close()
+        return True
+    except Exception:
+        pass
+
+    print("[SERVER-WATCHDOG] ⚠️ server.py is not listening on port 3000! Resurrecting...", flush=True)
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
+    subprocess.run(["pkill", "-9", "-f", "ntamediaserver/server\\.py"], capture_output=True)
+    time.sleep(1)
+    server_script = os.path.join(repo_dir, "server.py")
+    server_log = os.path.join(repo_dir, "server.log")
+    try:
+        log_out = open(server_log, "a")
+        subprocess.Popen(
+            [sys.executable, server_script],
+            cwd=repo_dir,
+            stdout=log_out,
+            stderr=subprocess.STDOUT
+        )
+        time.sleep(2)
+        return True
+    except Exception as e:
+        print(f"[SERVER-WATCHDOG] Failed to spawn server.py: {e}", flush=True)
+        return False
+
 def restart_server_and_tunnel():
     """Completely re-initializes and restarts both server.py and cloudflared tunnel upon network restoration."""
     global current_process, current_url, last_pushed_url
@@ -309,7 +341,7 @@ def restart_server_and_tunnel():
     
     repo_dir = os.path.dirname(os.path.abspath(__file__))
     
-    # 1. Terminate existing cloudflared process
+    # 1. Terminate existing cloudflared process for port 3000 only
     if current_process:
         try:
             current_process.terminate()
@@ -317,12 +349,12 @@ def restart_server_and_tunnel():
         except Exception:
             pass
         current_process = None
-    subprocess.run(["pkill", "-9", "-f", "cloudflared"], capture_output=True)
+    subprocess.run(["pkill", "-9", "-f", "cloudflared.*3000"], capture_output=True)
     
-    # 2. Terminate existing server.py cleanly
+    # 2. Terminate existing server.py cleanly (MediaServer only)
     print("[NET-WATCHDOG] 🛑 Stopping existing server.py instances...", flush=True)
-    subprocess.run(["pkill", "-9", "-f", "server.py"], capture_output=True)
-    time.sleep(2)
+    subprocess.run(["pkill", "-9", "-f", "ntamediaserver/server\\.py"], capture_output=True)
+    time.sleep(1.5)
     
     # 3. Re-assert Termux wake lock so device doesn't sleep while running server
     try:
@@ -395,6 +427,15 @@ def run_coordinator():
             print(f"[NET-WATCHDOG] 🚀 Network restored after {downtime}s! (Mobile auto-reconnected). Restarting entire server stack...", flush=True)
             restart_server_and_tunnel()
             continue
+
+        # ── 🛡️ Local Server Watchdog (Port 3000) ──
+        ensure_server_running()
+
+        # ── 🛡️ Tunnel Process Liveness Watchdog ──
+        if current_process is None or current_process.poll() is not None:
+            print("[TUNNEL-WATCHDOG] ⚠️ Media tunnel inactive/crashed. Respawning...", flush=True)
+            current_process = None
+            start_tunnel()
 
         state = get_sync_state()
         now = datetime.now(timezone.utc)
@@ -486,4 +527,4 @@ if __name__ == "__main__":
         print("\nExiting...", flush=True)
         if current_process:
             current_process.terminate()
-            subprocess.run(["pkill", "-f", "cloudflared"])
+            subprocess.run(["pkill", "-f", "cloudflared.*3000"])
