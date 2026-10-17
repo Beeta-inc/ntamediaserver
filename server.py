@@ -760,7 +760,7 @@ if (cardsHtml) {{
                                 <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); border-radius:6px; padding:6px 10px; font-size:11px;">
                                     <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-right:8px;">
                                         <div style="font-weight:600; color:#fff;">${{k.name || 'Client'}}</div>
-                                        <div style="font-family:'JetBrains Mono',monospace; color:var(--cyan); font-size:10px;">${{k.masked_key}} &bull; <span style="color:var(--text-sub);">${{k.requests_total || 0}} reqs</span></div>
+                                        <div style="font-family:'JetBrains Mono',monospace; color:var(--cyan); font-size:10px;">${{k.masked_key || ((k.prefix || '') + '****' + (k.suffix || ''))}} &bull; <span style="color:var(--text-sub);">${{k.requests_total ?? k.query_count ?? 0}} reqs</span></div>
                                     </div>
                                     <button onclick="revokeKey('${{k.key_id}}')" style="background:rgba(244,63,94,0.2); color:var(--rose); border:1px solid rgba(244,63,94,0.3); border-radius:4px; padding:3px 8px; font-size:10px; cursor:pointer;">Revoke</button>
                                 </div>`;
