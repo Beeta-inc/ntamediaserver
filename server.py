@@ -1,6 +1,7 @@
 import os
 import time
 import urllib.request
+import urllib.parse
 import json
 import sys
 import subprocess
@@ -384,7 +385,10 @@ def index():
                     ⚡ Netuark <span style="color:var(--cyan)">Media Cluster</span>
                     <span class="brand-badge">HA v2.2 Sovereign</span>
                 </div>
-                <a href="/docs" class="docs-btn">📖 API Docs & SDKs</a>
+                <div style="display:flex; gap:10px; align-items:center;">
+                    <a href="/docs" class="docs-btn">📁 Media Docs</a>
+                    <a href="https://ntawebsearch.pages.dev/docs" target="_blank" class="docs-btn" style="background:linear-gradient(135deg, #00f3ff, #0077ff); color:#000;">🔍 Search Docs</a>
+                </div>
             </div>
 
             <div class="summary-banner">
@@ -395,9 +399,15 @@ def index():
                     </span>
                 </div>
                 <div class="summary-item">
-                    <span class="summary-label">Production Edge Gateway</span>
+                    <span class="summary-label">Media Edge Gateway</span>
                     <span class="summary-value" style="font-family:'JetBrains Mono', monospace; font-size:13px; color:var(--cyan);">
                         https://ntamediaserver.pages.dev
+                    </span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">WebSearch API Gateway</span>
+                    <span class="summary-value" style="font-family:'JetBrains Mono', monospace; font-size:13px; color:var(--emerald);">
+                        https://ntawebsearch.pages.dev
                     </span>
                 </div>
                 <div class="summary-item">
@@ -416,6 +426,94 @@ def index():
             <div class="dashboard-grid" id="telemetry-dashboard">
                 <div class="node-card">
                     <p style="color:var(--text-sub); font-size:13px;">Polling hardware vitals and mesh nodes...</p>
+                </div>
+            </div>
+
+            <div class="search-hub-container" style="background:var(--card-bg); border:1px solid var(--border); border-radius:12px; padding:24px; margin-bottom:28px;">
+                <div class="section-header" style="margin-bottom:8px;">
+                    <div>
+                        <div class="section-title" style="display:flex; align-items:center; gap:8px;">
+                            <span>⚡ Sovereign WebSearch Engine & Chromium Sandbox</span>
+                            <span class="badge" id="search-status-badge" style="background:rgba(245,158,11,0.15); color:var(--amber); border:1px solid rgba(245,158,11,0.3);">CONNECTING...</span>
+                        </div>
+                        <p style="color:var(--text-sub); font-size:12px; margin-top:4px;">
+                            100% SerpAPI drop-in schema parity hosted natively on this Lenovo phone (Port 3001 & CDP 9222).
+                        </p>
+                    </div>
+                    <div style="font-family:'JetBrains Mono', monospace; font-size:11px; color:var(--text-sub);">
+                        Port: <span style="color:var(--cyan)">3001</span> &bull; CDP: <span style="color:var(--purple)">9222</span>
+                    </div>
+                </div>
+
+                <!-- Two-column grid -->
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:20px; margin-top:16px;">
+                    
+                    <!-- Left Column: Key Generator & Active Keys -->
+                    <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); border-radius:10px; padding:18px;">
+                        <div style="font-weight:700; font-size:14px; color:#fff; margin-bottom:4px; display:flex; justify-content:space-between; align-items:center;">
+                            <span>🔑 Sovereign API Key Creator</span>
+                            <span style="font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-sub);">SHA-256 Hashed</span>
+                        </div>
+                        <p style="font-size:11px; color:var(--text-sub); margin-bottom:12px;">
+                            Generate sovereign API keys for NeTuArk Chat AI and Mobile Clients. Keys are revealed <strong>once</strong> and stored hashed on-device.
+                        </p>
+                        
+                        <form id="createKeyForm" style="display:flex; gap:8px;">
+                            <input type="text" id="keyClientName" placeholder="Client Name (e.g. NeTuArk-Chat-AI)" class="form-control" style="font-size:12px; padding:8px 12px;" required />
+                            <button type="submit" class="btn-submit" style="padding:8px 14px; white-space:nowrap; font-size:12px; background:linear-gradient(135deg, #10b981, #059669); color:#fff;">+ Create Key</button>
+                        </form>
+
+                        <div id="newKeyAlert" style="display:none; margin-top:12px; padding:12px; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.4); border-radius:8px;">
+                            <div style="color:var(--emerald); font-weight:700; font-size:11px; margin-bottom:4px;">✅ NEW API KEY GENERATED (ONE-TIME REVEAL):</div>
+                            <div style="display:flex; gap:8px; align-items:center;">
+                                <input type="text" id="revealedKeyInput" readonly class="form-control" style="font-family:'JetBrains Mono', monospace; font-size:11px; padding:6px 10px; background:#000; color:var(--cyan); border-color:var(--emerald);" />
+                                <button type="button" onclick="copyRevealedKey()" class="docs-btn" style="padding:6px 12px; font-size:11px; cursor:pointer;">Copy</button>
+                            </div>
+                            <div style="color:var(--amber); font-size:10px; margin-top:6px; line-height:1.4;">
+                                ⚠️ Copy this key now! It is stored as a SHA-256 hash on your device and cannot be retrieved again.
+                            </div>
+                        </div>
+
+                        <div style="margin-top:16px;">
+                            <div style="font-size:12px; font-weight:600; color:var(--text-sub); margin-bottom:8px; display:flex; justify-content:space-between;">
+                                <span>Active Hardware Keys</span>
+                                <span id="keysCountBadge" style="font-family:'JetBrains Mono', monospace; font-size:10px; color:var(--cyan);">0 keys</span>
+                            </div>
+                            <div id="activeKeysList" style="max-height:160px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;">
+                                <div style="font-size:11px; color:var(--text-sub); font-style:italic;">Loading keys...</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Interactive Live Search Tester -->
+                    <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); border-radius:10px; padding:18px;">
+                        <div style="font-weight:700; font-size:14px; color:#fff; margin-bottom:4px; display:flex; justify-content:space-between; align-items:center;">
+                            <span>🔎 Interactive Search Console</span>
+                            <span style="font-family:'JetBrains Mono', monospace; font-size:10px; color:var(--emerald);">SerpAPI Drop-in</span>
+                        </div>
+                        <p style="font-size:11px; color:var(--text-sub); margin-bottom:12px;">
+                            Execute queries directly through the phone's Chromium CDP browser sandbox.
+                        </p>
+
+                        <form id="searchTestForm" style="display:flex; flex-direction:column; gap:8px;">
+                            <div style="display:flex; gap:8px;">
+                                <input type="text" id="testSearchQuery" placeholder="Enter query (e.g. quantum computing 2026)" class="form-control" style="font-size:12px; padding:8px 12px;" required />
+                                <select id="testSearchEngine" class="form-control" style="width:140px; font-size:11px; padding:8px;">
+                                    <option value="google">Google Web</option>
+                                    <option value="google_images">Google Images</option>
+                                    <option value="multi">Fast Multi-Engine</option>
+                                </select>
+                            </div>
+                            <div style="display:flex; gap:8px;">
+                                <input type="text" id="testApiKey" placeholder="API Key (optional if no keys created yet)" class="form-control" style="font-size:11px; padding:6px 10px; font-family:'JetBrains Mono', monospace;" />
+                                <button type="submit" id="searchSubmitBtn" class="btn-submit" style="padding:6px 16px; white-space:nowrap; font-size:12px; background:linear-gradient(135deg, #00f3ff, #0088ff); color:#000;">🚀 Run Search</button>
+                            </div>
+                        </form>
+
+                        <div id="searchTestResults" style="display:none; margin-top:12px; max-height:220px; overflow-y:auto; background:var(--bg-dark); border:1px solid var(--border); border-radius:8px; padding:10px; font-family:'JetBrains Mono', monospace; font-size:11px; color:#e2e8f0; white-space:pre-wrap; word-break:break-word;">
+                        </div>
+                    </div>
+
                 </div>
             </div>
 
@@ -611,6 +709,182 @@ def index():
                         resultDiv.innerHTML = '<span style="color:var(--rose)">❌ Network Error: ' + err.message + '</span>';
                     }}
                 }});
+
+                // ── WebSearch API Integration & Management ──
+                async function pollSearchStatus() {{
+                    const badge = document.getElementById('search-status-badge');
+                    try {{
+                        const res = await fetch('/api/search_service/status', {{ signal: AbortSignal.timeout(2500) }});
+                        if (res.ok) {{
+                            const d = await res.json();
+                            if (d.status === 'online') {{
+                                const cdpActive = d.chromium_cdp && d.chromium_cdp.status === 'active';
+                                badge.className = 'badge active';
+                                badge.innerHTML = cdpActive ? '● ONLINE (CHROMIUM CDP)' : '● ONLINE (PORT 3001)';
+                                badge.style.background = 'rgba(16,185,129,0.15)';
+                                badge.style.color = 'var(--emerald)';
+                                badge.style.borderColor = 'rgba(16,185,129,0.3)';
+                            }} else {{
+                                badge.className = 'badge offline';
+                                badge.innerHTML = '● SEARCH SERVER STANDBY';
+                                badge.style.background = 'rgba(244,63,94,0.15)';
+                                badge.style.color = 'var(--rose)';
+                                badge.style.borderColor = 'rgba(244,63,94,0.3)';
+                            }}
+                        }}
+                    }} catch (e) {{
+                        badge.className = 'badge offline';
+                        badge.innerHTML = '● SEARCH OFFLINE';
+                        badge.style.background = 'rgba(244,63,94,0.15)';
+                        badge.style.color = 'var(--rose)';
+                    }}
+                }}
+
+                async function fetchActiveKeys() {{
+                    const keysListEl = document.getElementById('activeKeysList');
+                    const countBadge = document.getElementById('keysCountBadge');
+                    try {{
+                        const res = await fetch('/api/search_service/keys', {{ signal: AbortSignal.timeout(2500) }});
+                        if (res.ok) {{
+                            const d = await res.json();
+                            const keys = d.keys || [];
+                            countBadge.textContent = keys.length + (keys.length === 1 ? ' key' : ' keys');
+                            if (keys.length === 0) {{
+                                keysListEl.innerHTML = '<div style="font-size:11px; color:var(--text-sub); font-style:italic;">No keys generated yet. (API open or create one above)</div>';
+                                return;
+                            }}
+                            let html = '';
+                            keys.forEach(k => {{
+                                const createdDate = k.created_at ? k.created_at.split('T')[0] : '';
+                                html += `
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); border-radius:6px; padding:6px 10px; font-size:11px;">
+                                    <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-right:8px;">
+                                        <div style="font-weight:600; color:#fff;">${{k.name || 'Client'}}</div>
+                                        <div style="font-family:'JetBrains Mono',monospace; color:var(--cyan); font-size:10px;">${{k.masked_key}} &bull; <span style="color:var(--text-sub);">${{k.requests_total || 0}} reqs</span></div>
+                                    </div>
+                                    <button onclick="revokeKey('${{k.key_id}}')" style="background:rgba(244,63,94,0.2); color:var(--rose); border:1px solid rgba(244,63,94,0.3); border-radius:4px; padding:3px 8px; font-size:10px; cursor:pointer;">Revoke</button>
+                                </div>`;
+                            }});
+                            keysListEl.innerHTML = html;
+                        }}
+                    }} catch (e) {{
+                        keysListEl.innerHTML = '<div style="font-size:11px; color:var(--rose);">Could not load keys (Search server offline)</div>';
+                    }}
+                }}
+
+                window.revokeKey = async function(keyId) {{
+                    if (!confirm('Are you sure you want to revoke this sovereign API key?')) return;
+                    try {{
+                        const res = await fetch('/api/search_service/revoke_key', {{
+                            method: 'POST',
+                            headers: {{ 'Content-Type': 'application/json' }},
+                            body: JSON.stringify({{ key_id: keyId }})
+                        }});
+                        if (res.ok) {{
+                            fetchActiveKeys();
+                        }} else {{
+                            alert('Failed to revoke key');
+                        }}
+                    }} catch (e) {{
+                        alert('Network error: ' + e.message);
+                    }}
+                }};
+
+                function copyRevealedKey() {{
+                    const input = document.getElementById('revealedKeyInput');
+                    input.select();
+                    navigator.clipboard.writeText(input.value).then(() => {{
+                        alert('API Key copied to clipboard! Keep it safe.');
+                    }}).catch(() => {{
+                        document.execCommand('copy');
+                        alert('API Key copied!');
+                    }});
+                }}
+
+                // Create Key Form Handler
+                document.getElementById('createKeyForm').addEventListener('submit', async (e) => {{
+                    e.preventDefault();
+                    const name = document.getElementById('keyClientName').value.trim();
+                    if (!name) return;
+                    const alertBox = document.getElementById('newKeyAlert');
+                    const keyInput = document.getElementById('revealedKeyInput');
+                    
+                    try {{
+                        const res = await fetch('/api/search_service/create_key', {{
+                            method: 'POST',
+                            headers: {{ 'Content-Type': 'application/json' }},
+                            body: JSON.stringify({{ name: name }})
+                        }});
+                        const data = await res.json();
+                        if (res.ok && data.api_key) {{
+                            keyInput.value = data.api_key;
+                            alertBox.style.display = 'block';
+                            document.getElementById('testApiKey').value = data.api_key;
+                            document.getElementById('keyClientName').value = '';
+                            fetchActiveKeys();
+                        }} else {{
+                            alert('Error creating key: ' + (data.error || 'Server error'));
+                        }}
+                    }} catch (err) {{
+                        alert('Network error: ' + err.message);
+                    }}
+                }});
+
+                // Interactive Live Search Console Handler
+                document.getElementById('searchTestForm').addEventListener('submit', async (e) => {{
+                    e.preventDefault();
+                    const query = document.getElementById('testSearchQuery').value.trim();
+                    const engine = document.getElementById('testSearchEngine').value;
+                    const apiKey = document.getElementById('testApiKey').value.trim();
+                    const resultsBox = document.getElementById('searchTestResults');
+                    const submitBtn = document.getElementById('searchSubmitBtn');
+
+                    resultsBox.style.display = 'block';
+                    resultsBox.innerHTML = '<span style="color:var(--cyan)">⚡ Dispatching query to phone Chromium CDP sandbox...</span>';
+                    submitBtn.disabled = true;
+                    submitBtn.style.opacity = '0.6';
+
+                    try {{
+                        const res = await fetch('/api/search_service/test_search', {{
+                            method: 'POST',
+                            headers: {{ 'Content-Type': 'application/json' }},
+                            body: JSON.stringify({{ query: query, engine: engine, api_key: apiKey }})
+                        }});
+                        const data = await res.json();
+                        if (res.ok) {{
+                            const organic = data.organic_results || [];
+                            const images = data.images_results || [];
+                            let summary = `<span style="color:var(--emerald)">✅ Query Succeeded! Engine: ${{data.search_metadata?.engine || engine}} (${{organic.length}} results)</span>\\n\\n`;
+                            
+                            if (organic.length > 0) {{
+                                organic.forEach((r, idx) => {{
+                                    summary += `<span style="color:var(--cyan);">[${{idx+1}}] ${{r.title}}</span>\\n`;
+                                    summary += `<span style="color:var(--text-sub); font-size:10px;">${{r.link}}</span>\\n`;
+                                    summary += `${{r.snippet || ''}}\\n\\n`;
+                                }});
+                            }} else if (images.length > 0) {{
+                                summary += `<span style="color:var(--emerald);">Found ${{images.length}} images. First 3:</span>\\n`;
+                                images.slice(0, 3).forEach((img, idx) => {{
+                                    summary += `[${{idx+1}}] ${{img.title}}\\n${{img.original}}\\n\\n`;
+                                }});
+                            }} else {{
+                                summary += JSON.stringify(data, null, 2);
+                            }}
+                            resultsBox.innerHTML = summary;
+                        }} else {{
+                            resultsBox.innerHTML = `<span style="color:var(--rose)">❌ Search Error (${{res.status}}): ${{data.error || JSON.stringify(data)}}</span>`;
+                        }}
+                    }} catch (err) {{
+                        resultsBox.innerHTML = `<span style="color:var(--rose)">❌ Execution Failure: ${{err.message}}</span>`;
+                    }} finally {{
+                        submitBtn.disabled = false;
+                        submitBtn.style.opacity = '1';
+                    }}
+                }});
+
+                pollSearchStatus();
+                fetchActiveKeys();
+                setInterval(pollSearchStatus, 5000);
             </script>
         </body>
     </html>
@@ -968,6 +1242,116 @@ def internal_logs():
         except Exception as e:
             return jsonify({"error": str(e)}), 500
     return jsonify({"error": "Log file not found", "path": log_file}), 404
+
+# ==============================================================================
+# 🔍 SOVEREIGN WEBSEARCH API PROXY ROUTES (Parallel Cluster Port 3001)
+# ==============================================================================
+
+@app.route('/api/search_service/status', methods=['GET'])
+def search_service_status():
+    """Polls the local WebSearch API on port 3001 and Chromium CDP on port 9222."""
+    search_online = False
+    search_info = {}
+    try:
+        req = urllib.request.Request("http://127.0.0.1:3001/health", headers={"User-Agent": "NTA-MediaServer-Proxy/1.0"})
+        with urllib.request.urlopen(req, timeout=1.5) as res:
+            if res.status == 200:
+                search_online = True
+                search_info = json.loads(res.read().decode('utf-8'))
+    except Exception:
+        pass
+
+    cdp_online = False
+    cdp_browser = ""
+    try:
+        req = urllib.request.Request("http://127.0.0.1:9222/json/version", headers={"User-Agent": "NTA-MediaServer-Proxy/1.0"})
+        with urllib.request.urlopen(req, timeout=1.5) as res:
+            if res.status == 200:
+                cdp_online = True
+                cdp_data = json.loads(res.read().decode('utf-8'))
+                cdp_browser = cdp_data.get("Browser", "Headless Chromium")
+    except Exception:
+        pass
+
+    return jsonify({
+        "status": "online" if search_online else "offline",
+        "port": 3001,
+        "gateway": "https://ntawebsearch.pages.dev",
+        "chromium_cdp": {
+            "status": "active" if cdp_online else "inactive",
+            "port": 9222,
+            "browser": cdp_browser or ("Chromium Sandbox" if search_online else "Standby")
+        },
+        "details": search_info
+    }), 200
+
+@app.route('/api/search_service/create_key', methods=['POST'])
+def proxy_create_search_key():
+    """Proxies key generation to the sovereign search server (Port 3001). One-time plaintext reveal."""
+    data = request.get_json(silent=True) or {}
+    name = data.get("name") or request.form.get("name") or "NeTuArk Sovereign Client"
+    try:
+        payload = json.dumps({"name": name}).encode('utf-8')
+        req = urllib.request.Request(
+            "http://127.0.0.1:3001/createapi",
+            data=payload,
+            headers={"Content-Type": "application/json", "User-Agent": "NTA-MediaServer-Proxy/1.0"}
+        )
+        with urllib.request.urlopen(req, timeout=3.5) as res:
+            return res.read().decode('utf-8'), res.status, {'Content-Type': 'application/json'}
+    except Exception as e:
+        return jsonify({"error": f"Search server unreachable on port 3001: {str(e)}"}), 502
+
+@app.route('/api/search_service/keys', methods=['GET'])
+def proxy_list_search_keys():
+    """Fetches masked active keys from search server."""
+    try:
+        req = urllib.request.Request("http://127.0.0.1:3001/api/keys", headers={"User-Agent": "NTA-MediaServer-Proxy/1.0"})
+        with urllib.request.urlopen(req, timeout=2.5) as res:
+            return res.read().decode('utf-8'), res.status, {'Content-Type': 'application/json'}
+    except Exception as e:
+        return jsonify({"success": False, "keys": [], "error": str(e)}), 200
+
+@app.route('/api/search_service/revoke_key', methods=['POST'])
+def proxy_revoke_search_key():
+    """Revokes an API key on the search server."""
+    data = request.get_json(silent=True) or {}
+    try:
+        payload = json.dumps(data).encode('utf-8')
+        req = urllib.request.Request(
+            "http://127.0.0.1:3001/api/keys/revoke",
+            data=payload,
+            headers={"Content-Type": "application/json", "User-Agent": "NTA-MediaServer-Proxy/1.0"}
+        )
+        with urllib.request.urlopen(req, timeout=2.5) as res:
+            return res.read().decode('utf-8'), res.status, {'Content-Type': 'application/json'}
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+@app.route('/api/search_service/test_search', methods=['POST'])
+def proxy_test_search():
+    """Proxies interactive test search query to port 3001."""
+    body = request.get_json(silent=True) or {}
+    query = (body.get("query") or "").strip()
+    if not query:
+        return jsonify({"error": "Query cannot be empty"}), 400
+    engine = body.get("engine", "google")
+    api_key = (body.get("api_key") or "").strip()
+    
+    encoded_q = urllib.parse.quote_plus(query)
+    target_url = f"http://127.0.0.1:3001/search?q={encoded_q}&engine={urllib.parse.quote_plus(engine)}"
+    if api_key:
+        target_url += f"&api_key={urllib.parse.quote_plus(api_key)}"
+    
+    try:
+        req = urllib.request.Request(target_url, headers={"User-Agent": "NTA-MediaServer-Tester/1.0"})
+        with urllib.request.urlopen(req, timeout=20.0) as res:
+            return res.read().decode('utf-8'), res.status, {'Content-Type': 'application/json'}
+    except urllib.error.HTTPError as he:
+        err_body = he.read().decode('utf-8') if he.fp else str(he)
+        return err_body, he.code, {'Content-Type': 'application/json'}
+    except Exception as e:
+        return jsonify({"error": f"Search failed or timed out: {str(e)}"}), 502
 
 def standalone_network_watchdog():
     """Fallback watchdog for when server.py runs standalone without auto_tunnel.py coordinator."""

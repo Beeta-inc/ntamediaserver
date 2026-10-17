@@ -46,11 +46,11 @@ def register_with_pages(url):
     """Hit the Cloudflare Pages edge function so it immediately knows the new tunnel URL."""
     try:
         payload = json.dumps({"endpoint": url, "secret": PAGES_SHARED_SECRET}).encode()
-        req = urllib.request.Request(
-            PAGES_REG_URL,
-            data=payload,
-            headers={"Content-Type": "application/json"}
-        )
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        req = urllib.request.Request(PAGES_REG_URL, data=payload, headers=headers)
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode())
             print(f"[PAGES] Registered with Cloudflare Pages: {data.get('status')} -> {data.get('active_origin')}", flush=True)

@@ -4,12 +4,13 @@
  * then forwards every request to it. No API keys needed by callers.
  */
 
+const SYNC_FIRESTORE_URL = "https://firestore.googleapis.com/v1/projects/ntamedia-1f03d/databases/(default)/documents/serverSync/coordinator";
 const GITHUB_ENDPOINT_URL = "https://raw.githubusercontent.com/Beeta-inc/ntamediaserver/main/endpoint.json";
 const DEFAULT_FALLBACK_ORIGIN = "https://placeholder.trycloudflare.com";
 
 let cachedOrigin = null;
 let lastFetchTime = 0;
-const CACHE_TTL_MS = 10000; // re-check GitHub every 10s
+const CACHE_TTL_MS = 10000; // re-check every 10s
 
 export const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -32,6 +33,28 @@ export async function getLiveOrigin(forceRefresh = false) {
     return cachedOrigin;
   }
 
+  // 1. Check Secondary Firebase Firestore Coordinator (instant real-time phone registry, zero CDN delay)
+  try {
+    const fsRes = await fetch(SYNC_FIRESTORE_URL, {
+      headers: { "Accept": "application/json" }
+    });
+    if (fsRes.ok) {
+      const fsData = await fsRes.json();
+      const fields = fsData.fields || {};
+      const masterId = fields.master_id && fields.master_id.stringValue ? fields.master_id.stringValue : "";
+      if (masterId) {
+        const peerField = `peer_url_${masterId}`;
+        const peerUrl = fields[peerField] && fields[peerField].stringValue ? fields[peerField].stringValue : "";
+        if (peerUrl && peerUrl.startsWith("https://")) {
+          cachedOrigin = peerUrl.replace(/\/+$/, "");
+          lastFetchTime = now;
+          return cachedOrigin;
+        }
+      }
+    }
+  } catch (_) {}
+
+  // 2. Check GitHub endpoint.json as reliable fallback
   try {
     const res = await fetch(`${GITHUB_ENDPOINT_URL}?_t=${now}`, {
       headers: { "Cache-Control": "no-cache, no-store" }
