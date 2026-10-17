@@ -95,8 +95,8 @@ if [ -n "$CHROMIUM_BIN" ]; then
         --disable-sync \
         --remote-debugging-port=9222 \
         --remote-debugging-address=127.0.0.1 \
-        --user-data-dir="/tmp/chromium_search_profile" \
-        about:blank > /tmp/chromium_cdp.log 2>&1 &
+        --user-data-dir="$HOME/.config/nta-chromium-sandbox" \
+        about:blank > chromium_cdp.log 2>&1 &
     CHROMIUM_PID=$!
 
     CDP_UP=0
