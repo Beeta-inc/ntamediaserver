@@ -680,7 +680,7 @@ def index():
                         console.warn('Peer node telemetry offline:', err);
                     }}
 
-                    if (cardsHtml) {{
+if (cardsHtml) {{
                         dashboardEl.innerHTML = cardsHtml;
                     }}
                 }}
@@ -925,10 +925,30 @@ def upload_file():
         'fileUrl': file_url
     })
 
+def _is_corrupt_zstd_media(fpath, fname):
+    """Detects if an image/media file on disk is incorrectly stored as raw zstd compressed bytes"""
+    if not os.path.exists(fpath):
+        return False
+    if any(fname.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp", ".gif", ".webm", ".mp4", ".mp3", ".ogg"]):
+        try:
+            with open(fpath, "rb") as f:
+                header = f.read(4)
+            if header == b"\x28\xb5\x2f\xfd":
+                try:
+                    os.remove(fpath)
+                    print(f"[!] Purged corrupt zstd file from disk: {fpath}")
+                except Exception:
+                    pass
+                return True
+        except Exception:
+            pass
+    return False
+
 def fallback_and_serve(target_dir, folder, filename):
     file_path = os.path.join(target_dir, filename)
     if os.path.exists(file_path):
-        return send_from_directory(target_dir, filename)
+        if not _is_corrupt_zstd_media(file_path, filename):
+            return send_from_directory(target_dir, filename)
         
     # Check all other subdirectories inside BASE_DIR
     if os.path.exists(BASE_DIR):
@@ -937,10 +957,16 @@ def fallback_and_serve(target_dir, folder, filename):
                 if entry.is_dir() and entry.path != target_dir:
                     candidate = os.path.join(entry.path, filename)
                     if os.path.exists(candidate):
-                        return send_from_directory(entry.path, filename)
+                        if not _is_corrupt_zstd_media(candidate, filename):
+                            return send_from_directory(entry.path, filename)
         except Exception:
             pass
             
+    # Anti-Deadlock Guard: Do not recurse if request comes from peer mesh
+    incoming_ua = (request.headers.get("User-Agent") or "").lower()
+    if request.headers.get("X-Mesh-Hop") or "meshsync" in incoming_ua or "redmi-ai-node" in incoming_ua:
+        return send_from_directory(target_dir, filename)
+
     # Check negative cache before performing expensive network lookups
     cache_key = f"{folder}/{filename}"
     if is_negative_cached(cache_key):
@@ -976,13 +1002,21 @@ def fallback_and_serve(target_dir, folder, filename):
             for c_path in candidate_paths:
                 try:
                     peer_file_url = f"{peer}{c_path}"
-                    dl_req = urllib.request.Request(peer_file_url, headers={"User-Agent": "NTA-MediaServer/MeshSync"})
+                    dl_req = urllib.request.Request(peer_file_url, headers={
+                        "User-Agent": "NTA-MediaServer/MeshSync",
+                        "X-Mesh-Hop": "1"
+                    })
                     with urllib.request.urlopen(dl_req, timeout=3) as dl_res:
                         if dl_res.status == 200:
+                            data = dl_res.read()
+                            # Reject if peer sent zstd compressed bytes for media
+                            if any(filename.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp", ".gif"]) and data[:4] == b"\x28\xb5\x2f\xfd":
+                                print(f"[-] Refusing corrupt zstd payload from peer {peer} for {filename}")
+                                continue
                             os.makedirs(target_dir, exist_ok=True)
                             tmp_file = file_path + ".tmp"
                             with open(tmp_file, 'wb') as out_f:
-                                shutil.copyfileobj(dl_res, out_f, length=65536)
+                                out_f.write(data)
                             os.replace(tmp_file, file_path)
                             print(f"[+] Downloaded {filename} from peer {peer} ({c_path})")
                             return send_from_directory(target_dir, filename)
