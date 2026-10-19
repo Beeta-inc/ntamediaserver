@@ -13,12 +13,14 @@ pkill -9 -f termux-api 2>/dev/null || true
 
 # Clean existing instances cleanly with targeted patterns
 pkill -9 -f 'ntamediaserver/server\.py' 2>/dev/null || true
+pkill -9 -f 'hyperdata_server\.py' 2>/dev/null || true
 pkill -9 -f 'auto_tunnel\.py' 2>/dev/null || true
 pkill -9 -f 'ntawebsearchapi/search_server\.py' 2>/dev/null || true
 pkill -9 -f 'search_tunnel\.py' 2>/dev/null || true
 pkill -9 -f 'chromium.*9222' 2>/dev/null || true
 pkill -9 -f 'cloudflared.*3000' 2>/dev/null || true
 pkill -9 -f 'cloudflared.*3001' 2>/dev/null || true
+pkill -9 -f 'cloudflared.*3002' 2>/dev/null || true
 sleep 1
 
 # Resolve directories
@@ -70,8 +72,29 @@ if [ -n "$MEDIA_DIR" ]; then
         tail -n 5 server.log
     fi
 
+    # Start Sovereign HyperData Database Server on Dedicated Port 3002
+    echo "[2/5] Starting Sovereign HyperData Database Server on Port 3002..."
+    nohup python3 hyperdata_server.py > hyperdata.log 2>&1 &
+    HYPERDATA_PID=$!
+
+    HD_UP=0
+    for i in 1 2 3 4 5 6; do
+        sleep 1
+        if (echo > /dev/tcp/127.0.0.1/3002) 2>/dev/null || curl -s http://127.0.0.1:3002/v1/hyperdata/status >/dev/null 2>&1; then
+            HD_UP=1
+            break
+        fi
+    done
+
+    if [ "$HD_UP" -eq 1 ]; then
+        echo "  [OK] HyperData Database is LIVE on dedicated port 3002 (PID: $HYPERDATA_PID)"
+    else
+        echo "  [WARN] HyperData Server initializing slower than expected. Recent hyperdata.log:"
+        tail -n 5 hyperdata.log 2>/dev/null || true
+    fi
+
     # Start Media Tunnel
-    echo "[2/4] Starting Media Server Cloudflare Tunnel..."
+    echo "[3/5] Starting Media Server Cloudflare Tunnel..."
     nohup python3 auto_tunnel.py > tunnel.log 2>&1 &
     MEDIA_TUNNEL_PID=$!
 else
@@ -196,6 +219,11 @@ echo "    Production Hub: https://ntawebsearch.pages.dev"
 echo "    Live Tunnel:    ${SEARCH_TUNNEL_URL:-Establishing (check search_tunnel.log)}"
 echo "    Search Docs:    https://ntawebsearch.pages.dev/docs"
 echo "    Dashboard Hub:  https://ntamediaserver.pages.dev"
+echo ""
+echo "  [CLUSTER 3: Sovereign HyperData Database Engine]"
+echo "    Local Port:     http://127.0.0.1:3002"
+echo "    Production Hub: https://ntamediaserver.pages.dev/v1/hyperdata/status"
+echo "    Engine Tier:    Dual-Tier RAM L1 + SQLite WAL L2 (Real-Time SSE)"
 echo "=========================================================="
 echo "  Supervision Active: termux-wake-lock held."
 echo "=========================================================="

@@ -296,11 +296,13 @@ def auto_git_update_loop():
                     print(f"[COMMUNICATOR] 🚀 Remote update detected ({local_sha[:7]} -> {remote_sha[:7]}). Auto-pulling...", flush=True)
                     pull_res = subprocess.run(["git", "pull", "--rebase", "origin", "main"], cwd=repo_dir, capture_output=True, text=True, timeout=30)
                     print(f"[COMMUNICATOR] Git Pull Output:\n{pull_res.stdout}", flush=True)
-                    print("[COMMUNICATOR] Restarting server.py with updated codebase...", flush=True)
+                    print("[COMMUNICATOR] Restarting server.py & hyperdata_server.py with updated codebase...", flush=True)
                     subprocess.run(["pkill", "-f", "server.py"])
+                    subprocess.run(["pkill", "-f", "hyperdata_server.py"])
                     time.sleep(1.5)
                     subprocess.Popen([sys.executable, os.path.join(repo_dir, "server.py")], cwd=repo_dir)
-                    print("[COMMUNICATOR] Server restarted successfully!", flush=True)
+                    subprocess.Popen([sys.executable, os.path.join(repo_dir, "hyperdata_server.py")], cwd=repo_dir)
+                    print("[COMMUNICATOR] Servers restarted successfully!", flush=True)
         except Exception:
             pass
 
@@ -332,6 +334,37 @@ def ensure_server_running():
         return True
     except Exception as e:
         print(f"[SERVER-WATCHDOG] Failed to spawn server.py: {e}", flush=True)
+def ensure_hyperdata_running():
+    """Verifies that hyperdata_server.py is actively listening on port 3002; respawns if crashed."""
+    import socket
+    try:
+        s = socket.create_connection(("127.0.0.1", 3002), timeout=1)
+        s.close()
+        return True
+    except Exception:
+        pass
+
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
+    hd_script = os.path.join(repo_dir, "hyperdata_server.py")
+    if not os.path.exists(hd_script):
+        return True
+
+    print("[HYPERDATA-WATCHDOG] ⚠️ hyperdata_server.py is not listening on port 3002! Resurrecting...", flush=True)
+    subprocess.run(["pkill", "-9", "-f", "hyperdata_server\\.py"], capture_output=True)
+    time.sleep(1)
+    hd_log = os.path.join(repo_dir, "hyperdata.log")
+    try:
+        log_out = open(hd_log, "a")
+        subprocess.Popen(
+            [sys.executable, hd_script],
+            cwd=repo_dir,
+            stdout=log_out,
+            stderr=subprocess.STDOUT
+        )
+        time.sleep(2)
+        return True
+    except Exception as e:
+        print(f"[HYPERDATA-WATCHDOG] Failed to spawn hyperdata_server.py: {e}", flush=True)
         return False
 
 def restart_server_and_tunnel():
@@ -351,9 +384,10 @@ def restart_server_and_tunnel():
         current_process = None
     subprocess.run(["pkill", "-9", "-f", "cloudflared.*3000"], capture_output=True)
     
-    # 2. Terminate existing server.py cleanly (MediaServer only)
-    print("[NET-WATCHDOG] 🛑 Stopping existing server.py instances...", flush=True)
+    # 2. Terminate existing server.py and hyperdata_server.py cleanly
+    print("[NET-WATCHDOG] 🛑 Stopping existing server.py & hyperdata_server.py instances...", flush=True)
     subprocess.run(["pkill", "-9", "-f", "ntamediaserver/server\\.py"], capture_output=True)
+    subprocess.run(["pkill", "-9", "-f", "hyperdata_server\\.py"], capture_output=True)
     time.sleep(1.5)
     
     # 3. Re-assert Termux wake lock so device doesn't sleep while running server
@@ -362,8 +396,8 @@ def restart_server_and_tunnel():
     except Exception:
         pass
 
-    # 4. Spawn a fresh server.py process
-    print("[NET-WATCHDOG] 🚀 Starting fresh server.py instance...", flush=True)
+    # 4. Spawn fresh server.py and hyperdata_server.py processes
+    print("[NET-WATCHDOG] 🚀 Starting fresh server.py & hyperdata_server.py instances...", flush=True)
     server_script = os.path.join(repo_dir, "server.py")
     server_log = os.path.join(repo_dir, "server.log")
     try:
@@ -376,9 +410,23 @@ def restart_server_and_tunnel():
         )
     except Exception as e:
         print(f"[NET-WATCHDOG] Error spawning server.py: {e}", flush=True)
+
+    hd_script = os.path.join(repo_dir, "hyperdata_server.py")
+    if os.path.exists(hd_script):
+        hd_log = os.path.join(repo_dir, "hyperdata.log")
+        try:
+            hd_out = open(hd_log, "a")
+            subprocess.Popen(
+                [sys.executable, hd_script],
+                cwd=repo_dir,
+                stdout=hd_out,
+                stderr=subprocess.STDOUT
+            )
+        except Exception as e:
+            print(f"[NET-WATCHDOG] Error spawning hyperdata_server.py: {e}", flush=True)
     
-    # 5. Wait for server.py to bind to port 3000
-    print("[NET-WATCHDOG] ⏳ Waiting for server.py to bind to port 3000...", flush=True)
+    # 5. Wait for server.py (port 3000) and hyperdata_server.py (port 3002) to bind
+    print("[NET-WATCHDOG] ⏳ Waiting for server.py (3000) and hyperdata_server.py (3002)...", flush=True)
     server_ready = False
     import socket
     for _ in range(15):
@@ -428,8 +476,9 @@ def run_coordinator():
             restart_server_and_tunnel()
             continue
 
-        # ── 🛡️ Local Server Watchdog (Port 3000) ──
+        # ── 🛡️ Local Server Watchdogs (Port 3000 & Port 3002) ──
         ensure_server_running()
+        ensure_hyperdata_running()
 
         # ── 🛡️ Tunnel Process Liveness Watchdog ──
         if current_process is None or current_process.poll() is not None:
