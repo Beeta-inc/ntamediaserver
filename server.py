@@ -1398,6 +1398,15 @@ def proxy_test_search():
 # PROXY ROUTE TO DEDICATED SOVEREIGN HYPERDATA DATABASE (PORT 3002)
 # =========================================================================
 
+import urllib3
+
+_proxy_pool = urllib3.PoolManager(
+    maxsize=64,
+    num_pools=10,
+    headers={'User-Agent': 'NetuarkServerProxy/1.0'},
+    retries=urllib3.Retry(total=3, backoff_factor=0.05)
+)
+
 _local_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 @app.route('/v1/hyperdata', methods=['GET'])
@@ -1439,14 +1448,16 @@ def proxy_hyperdata_port_3002(subpath):
         res.headers["X-Accel-Buffering"] = "no"
         return res
 
-    req = urllib.request.Request(target_url, data=body, headers=headers, method=request.method)
     try:
-        with _local_opener.open(req, timeout=15.0) as resp:
-            resp_headers = [(k, v) for k, v in resp.headers.items() if k.lower() not in ['content-length', 'transfer-encoding', 'connection']]
-            return resp.read(), resp.status, resp_headers
-    except urllib.error.HTTPError as e:
-        err_headers = [(k, v) for k, v in e.headers.items() if k.lower() not in ['content-length', 'transfer-encoding', 'connection']]
-        return e.read(), e.code, err_headers
+        resp = _proxy_pool.request(
+            request.method,
+            target_url,
+            body=body,
+            headers=headers,
+            timeout=urllib3.Timeout(connect=3.0, read=30.0)
+        )
+        resp_headers = [(k, v) for k, v in resp.headers.items() if k.lower() not in ['content-length', 'transfer-encoding', 'connection']]
+        return resp.data, resp.status, resp_headers
     except Exception as e:
         return jsonify({"status": "error", "error": f"HyperData Service (Port 3002) unavailable: {str(e)}"}), 503
 
@@ -1464,6 +1475,38 @@ def admin_restart_server():
         return jsonify({"status": "restarting", "message": "server.py restarting cleanly"}), 200
     return jsonify({"error": "Unauthorized"}), 403
 
+@app.route('/api/admin/reload_cluster', methods=['POST'])
+def admin_reload_cluster():
+    """Administrative sync and cluster restart endpoint."""
+    auth_key = request.headers.get("X-Admin-Key", "")
+    if request.remote_addr in ['127.0.0.1', '::1', 'localhost'] or auth_key == 'netuark_admin_restart':
+        def _do_reload():
+            time.sleep(1)
+            repo_dir = os.path.dirname(os.path.abspath(__file__))
+            sdcard_media = "/sdcard/Download/ntamediaserver"
+            # Auto-sync files from /sdcard if available
+            if os.path.exists(sdcard_media) and repo_dir != sdcard_media:
+                for fname in os.listdir(sdcard_media):
+                    if fname.endswith(".py") or fname.endswith(".sh"):
+                        src = os.path.join(sdcard_media, fname)
+                        dst = os.path.join(repo_dir, fname)
+                        try:
+                            shutil.copy2(src, dst)
+                        except Exception:
+                            pass
+            # Restart hyperdata_server.py
+            subprocess.run(["pkill", "-9", "-f", "hyperdata_server.py"])
+            time.sleep(0.5)
+            subprocess.Popen([sys.executable, os.path.join(repo_dir, "hyperdata_server.py")], cwd=repo_dir)
+            # Restart server.py
+            time.sleep(0.5)
+            subprocess.Popen([sys.executable, os.path.join(repo_dir, "server.py")], cwd=repo_dir)
+            os._exit(0)
+
+        threading.Thread(target=_do_reload, daemon=True).start()
+        return jsonify({"status": "reloading", "message": "Synchronizing files and restarting cluster in 1s"}), 200
+    return jsonify({"error": "Unauthorized"}), 403
+
 def standalone_network_watchdog():
     """Fallback watchdog for when server.py runs standalone without auto_tunnel.py coordinator."""
     time.sleep(10)
@@ -1479,12 +1522,12 @@ def standalone_network_watchdog():
                 time.sleep(10)
                 continue
 
-            if not telemetry.is_network_online(timeout=1.5):
+            if not telemetry.is_network_online(timeout=8.0):
                 if not was_offline:
                     was_offline = True
                     offline_start = time.time()
                     print("\n[SERVER-WATCHDOG] ⚠️ Network disconnected! Pinging continuously...", flush=True)
-                time.sleep(2)
+                time.sleep(3)
                 continue
 
             if was_offline:
@@ -1503,5 +1546,11 @@ import threading
 threading.Thread(target=standalone_network_watchdog, daemon=True).start()
 
 if __name__ == '__main__':
-    # Run universally on the local network and internally
-    app.run(host='0.0.0.0', port=3000)
+    from werkzeug.serving import WSGIRequestHandler
+    # Enable persistent HTTP/1.1 keep-alive for instant zero-handshake request dispatch
+    WSGIRequestHandler.protocol_version = "HTTP/1.1"
+
+    # Run universally on the local network and internally (Multi-Threaded)
+    print("🚀 Starting Sovereign Media Server on port 3000 (HTTP/1.1 Multi-Threaded)...", flush=True)
+    app.run(host='0.0.0.0', port=3000, threaded=True)
+

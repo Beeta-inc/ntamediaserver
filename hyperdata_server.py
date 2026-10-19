@@ -230,6 +230,24 @@ def hyperdata_stream():
     return response
 
 # =========================================================================
+# ADMINISTRATIVE RESTART ENDPOINT (PORT 3002)
+# =========================================================================
+
+@app.route('/api/admin/restart', methods=['POST'])
+def hyperdata_admin_restart():
+    """Administrative restart endpoint for Port 3002 service."""
+    auth_key = request.headers.get("X-Admin-Key", "")
+    if request.remote_addr in ['127.0.0.1', '::1', 'localhost'] or auth_key == 'netuark_admin_restart':
+        def _do_restart():
+            time.sleep(1)
+            repo_dir = os.path.dirname(os.path.abspath(__file__))
+            subprocess.Popen([sys.executable, os.path.join(repo_dir, "hyperdata_server.py")], cwd=repo_dir)
+            os._exit(0)
+        threading.Thread(target=_do_restart, daemon=True).start()
+        return jsonify({"status": "restarting", "message": "hyperdata_server.py restarting cleanly"}), 200
+    return jsonify({"error": "Unauthorized"}), 403
+
+# =========================================================================
 # AUTONOMOUS NETWORK WATCHDOG FOR DEDICATED PORT 3002
 # =========================================================================
 
@@ -240,12 +258,12 @@ def hyperdata_network_watchdog():
     offline_start = 0
     while True:
         try:
-            if not telemetry.is_network_online(timeout=1.5):
+            if not telemetry.is_network_online(timeout=8.0):
                 if not was_offline:
                     was_offline = True
                     offline_start = time.time()
                     print("\n[HYPERDATA-WATCHDOG] ⚠️ Network disconnected! Waiting for restoration...", flush=True)
-                time.sleep(2)
+                time.sleep(3)
                 continue
 
             if was_offline:
@@ -260,6 +278,10 @@ def hyperdata_network_watchdog():
 threading.Thread(target=hyperdata_network_watchdog, daemon=True).start()
 
 if __name__ == '__main__':
+    from werkzeug.serving import WSGIRequestHandler
+    # Enable persistent HTTP/1.1 keep-alive for instant zero-handshake request dispatch
+    WSGIRequestHandler.protocol_version = "HTTP/1.1"
+
     port = int(os.environ.get("HYPERDATA_PORT", 3002))
-    print(f"🚀 Starting Sovereign HyperData Database Server on port {port}...", flush=True)
+    print(f"🚀 Starting Sovereign Enterprise HyperData Database Server on port {port} (HTTP/1.1 Multi-Threaded)...", flush=True)
     app.run(host='0.0.0.0', port=port, threaded=True)
