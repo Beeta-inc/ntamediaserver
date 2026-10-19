@@ -1398,6 +1398,12 @@ def proxy_test_search():
 # PROXY ROUTE TO DEDICATED SOVEREIGN HYPERDATA DATABASE (PORT 3002)
 # =========================================================================
 
+_local_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+@app.route('/v1/hyperdata', defaults={'subpath': 'status'}, methods=['GET'])
+@app.route('/v1/hyperdata/', defaults={'subpath': 'status'}, methods=['GET'])
+@app.route('/hyperdata', defaults={'subpath': 'status'}, methods=['GET'])
+@app.route('/hyperdata/', defaults={'subpath': 'status'}, methods=['GET'])
 @app.route('/v1/hyperdata/<path:subpath>', methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'])
 @app.route('/hyperdata/<path:subpath>', methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'])
 @app.route('/v1/db/<path:subpath>', methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'])
@@ -1416,7 +1422,7 @@ def proxy_hyperdata_port_3002(subpath):
         def generate():
             req = urllib.request.Request(target_url, data=body, headers=headers, method=request.method)
             try:
-                with urllib.request.urlopen(req, timeout=300.0) as resp:
+                with _local_opener.open(req, timeout=300.0) as resp:
                     while True:
                         chunk = resp.readline()
                         if not chunk:
@@ -1432,7 +1438,7 @@ def proxy_hyperdata_port_3002(subpath):
 
     req = urllib.request.Request(target_url, data=body, headers=headers, method=request.method)
     try:
-        with urllib.request.urlopen(req, timeout=15.0) as resp:
+        with _local_opener.open(req, timeout=15.0) as resp:
             resp_headers = [(k, v) for k, v in resp.headers.items() if k.lower() not in ['content-length', 'transfer-encoding', 'connection']]
             return resp.read(), resp.status, resp_headers
     except urllib.error.HTTPError as e:
@@ -1440,6 +1446,20 @@ def proxy_hyperdata_port_3002(subpath):
         return e.read(), e.code, err_headers
     except Exception as e:
         return jsonify({"status": "error", "error": f"HyperData Service (Port 3002) unavailable: {str(e)}"}), 503
+
+@app.route('/api/admin/restart', methods=['POST'])
+def admin_restart_server():
+    """Administrative reload endpoint allowing clean restart of server.py."""
+    auth_key = request.headers.get("X-Admin-Key", "")
+    if request.remote_addr in ['127.0.0.1', '::1', 'localhost'] or auth_key == 'netuark_admin_restart':
+        def _do_restart():
+            time.sleep(1)
+            repo_dir = os.path.dirname(os.path.abspath(__file__))
+            subprocess.Popen([sys.executable, os.path.join(repo_dir, "server.py")], cwd=repo_dir)
+            os._exit(0)
+        threading.Thread(target=_do_restart, daemon=True).start()
+        return jsonify({"status": "restarting", "message": "server.py restarting cleanly"}), 200
+    return jsonify({"error": "Unauthorized"}), 403
 
 def standalone_network_watchdog():
     """Fallback watchdog for when server.py runs standalone without auto_tunnel.py coordinator."""

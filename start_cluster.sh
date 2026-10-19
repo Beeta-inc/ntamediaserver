@@ -12,7 +12,12 @@ termux-wake-lock 2>/dev/null || true
 pkill -9 -f termux-api 2>/dev/null || true
 
 # Clean existing instances cleanly with targeted patterns
-pkill -9 -f 'ntamediaserver/server\.py' 2>/dev/null || true
+for pid in $(pgrep -f 'server\.py' 2>/dev/null); do
+    cmd=$(cat /proc/$pid/cmdline 2>/dev/null | tr '\0' ' ')
+    if [[ "$cmd" != *"search_server"* && "$cmd" != *"hyperdata_server"* ]]; then
+        kill -9 "$pid" 2>/dev/null || true
+    fi
+done
 pkill -9 -f 'hyperdata_server\.py' 2>/dev/null || true
 pkill -9 -f 'auto_tunnel\.py' 2>/dev/null || true
 pkill -9 -f 'ntawebsearchapi/search_server\.py' 2>/dev/null || true
@@ -31,6 +36,13 @@ if [ -d "$HOME/ntamediaserver" ]; then
     MEDIA_DIR="$HOME/ntamediaserver"
 elif [ -d "/sdcard/Download/ntamediaserver" ]; then
     MEDIA_DIR="/sdcard/Download/ntamediaserver"
+fi
+
+# Auto-sync files pushed via ADB into Termux home if both exist
+if [ -d "$HOME/ntamediaserver" ] && [ -d "/sdcard/Download/ntamediaserver" ]; then
+    echo "  [Sync] Synchronizing files from /sdcard/Download/ntamediaserver..."
+    cp -f /sdcard/Download/ntamediaserver/*.py "$HOME/ntamediaserver/" 2>/dev/null || true
+    cp -f /sdcard/Download/ntamediaserver/*.sh "$HOME/ntamediaserver/" 2>/dev/null || true
 fi
 
 if [ -d "$HOME/ntawebsearchapi" ]; then

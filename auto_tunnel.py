@@ -273,6 +273,22 @@ def sync_files_loop():
             pass
         time.sleep(20)
 
+def kill_media_server():
+    """Safely terminates only server.py without affecting search_server.py or hyperdata_server.py."""
+    try:
+        res = subprocess.run(["pgrep", "-f", "server.py"], capture_output=True, text=True)
+        for pid_str in res.stdout.strip().split():
+            try:
+                pid = int(pid_str)
+                with open(f"/proc/{pid}/cmdline", "r") as f:
+                    cmd = f.read()
+                if "search_server" not in cmd and "hyperdata_server" not in cmd:
+                    subprocess.run(["kill", "-9", str(pid)], capture_output=True)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
 def auto_git_update_loop():
     """Autonomous Internal Communicator: monitors GitHub repo for new commits, pulls updates, and reloads server."""
     if not shutil.which("git"):
@@ -297,8 +313,8 @@ def auto_git_update_loop():
                     pull_res = subprocess.run(["git", "pull", "--rebase", "origin", "main"], cwd=repo_dir, capture_output=True, text=True, timeout=30)
                     print(f"[COMMUNICATOR] Git Pull Output:\n{pull_res.stdout}", flush=True)
                     print("[COMMUNICATOR] Restarting server.py & hyperdata_server.py with updated codebase...", flush=True)
-                    subprocess.run(["pkill", "-f", "server.py"])
-                    subprocess.run(["pkill", "-f", "hyperdata_server.py"])
+                    kill_media_server()
+                    subprocess.run(["pkill", "-9", "-f", "hyperdata_server.py"], capture_output=True)
                     time.sleep(1.5)
                     subprocess.Popen([sys.executable, os.path.join(repo_dir, "server.py")], cwd=repo_dir)
                     subprocess.Popen([sys.executable, os.path.join(repo_dir, "hyperdata_server.py")], cwd=repo_dir)
@@ -318,7 +334,7 @@ def ensure_server_running():
 
     print("[SERVER-WATCHDOG] ⚠️ server.py is not listening on port 3000! Resurrecting...", flush=True)
     repo_dir = os.path.dirname(os.path.abspath(__file__))
-    subprocess.run(["pkill", "-9", "-f", "ntamediaserver/server\\.py"], capture_output=True)
+    kill_media_server()
     time.sleep(1)
     server_script = os.path.join(repo_dir, "server.py")
     server_log = os.path.join(repo_dir, "server.log")
