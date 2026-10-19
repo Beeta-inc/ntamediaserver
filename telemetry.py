@@ -191,7 +191,7 @@ def get_storage_info():
         pass
     return info
 
-def is_network_online(timeout=1.5):
+def is_network_online(timeout=8.0):
     for host in [("1.1.1.1", 53), ("8.8.8.8", 53), ("1.0.0.1", 53), ("8.8.4.4", 53)]:
         try:
             s = socket.create_connection(host, timeout=timeout)
@@ -200,13 +200,13 @@ def is_network_online(timeout=1.5):
         except Exception:
             continue
     try:
-        res = subprocess.run(["ping", "-c", "1", "-W", "1", "1.1.1.1"], capture_output=True, timeout=2)
+        res = subprocess.run(["ping", "-c", "1", "-W", "6", "1.1.1.1"], capture_output=True, timeout=8)
         if res.returncode == 0:
             return True
     except Exception:
         pass
     try:
-        res = subprocess.run(["ping", "-c", "1", "-W", "1", "8.8.8.8"], capture_output=True, timeout=2)
+        res = subprocess.run(["ping", "-c", "1", "-W", "6", "8.8.8.8"], capture_output=True, timeout=8)
         return res.returncode == 0
     except Exception:
         pass

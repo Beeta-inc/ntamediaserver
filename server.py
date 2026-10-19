@@ -1400,10 +1400,13 @@ def proxy_test_search():
 
 _local_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
-@app.route('/v1/hyperdata', defaults={'subpath': 'status'}, methods=['GET'])
-@app.route('/v1/hyperdata/', defaults={'subpath': 'status'}, methods=['GET'])
-@app.route('/hyperdata', defaults={'subpath': 'status'}, methods=['GET'])
-@app.route('/hyperdata/', defaults={'subpath': 'status'}, methods=['GET'])
+@app.route('/v1/hyperdata', methods=['GET'])
+@app.route('/v1/hyperdata/', methods=['GET'])
+@app.route('/hyperdata', methods=['GET'])
+@app.route('/hyperdata/', methods=['GET'])
+def proxy_hyperdata_root():
+    return proxy_hyperdata_port_3002('status')
+
 @app.route('/v1/hyperdata/<path:subpath>', methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'])
 @app.route('/hyperdata/<path:subpath>', methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'])
 @app.route('/v1/db/<path:subpath>', methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'])

@@ -175,7 +175,7 @@ def read_cloudflared_output(process):
         print(line, end='', flush=True)
         if current_url is None:
             match = re.search(r'(https://[a-zA-Z0-9-]+\.trycloudflare\.com)', line)
-            if match:
+            if match and "api.trycloudflare.com" not in match.group(1):
                 current_url = match.group(1)
                 print(f"\n[+] LIVE TUNNEL: {current_url}\n", flush=True)
                 # Register with Cloudflare Pages (permanent URL) immediately
@@ -486,11 +486,13 @@ def run_coordinator():
 
     while True:
         # ── 🌐 Network Watchdog with Ping Reconnect ──
-        if not telemetry.is_network_online(timeout=1.5):
-            downtime = telemetry.wait_for_network_recovery()
-            print(f"[NET-WATCHDOG] 🚀 Network restored after {downtime}s! (Mobile auto-reconnected). Restarting entire server stack...", flush=True)
-            restart_server_and_tunnel()
-            continue
+        if not telemetry.is_network_online(timeout=8.0):
+            # Double check with a second attempt before assuming down
+            if not telemetry.is_network_online(timeout=10.0):
+                downtime = telemetry.wait_for_network_recovery()
+                print(f"[NET-WATCHDOG] 🚀 Network restored after {downtime}s! (Mobile auto-reconnected). Restarting entire server stack...", flush=True)
+                restart_server_and_tunnel()
+                continue
 
         # ── 🛡️ Local Server Watchdogs (Port 3000 & Port 3002) ──
         ensure_server_running()
@@ -510,7 +512,7 @@ def run_coordinator():
             print(f"[-] Could not reach Sync DB (Attempt {failed_attempts}).", flush=True)
             
             # Check if network went down while reading sync state
-            if not telemetry.is_network_online(timeout=1.5):
+            if not telemetry.is_network_online(timeout=8.0):
                 downtime = telemetry.wait_for_network_recovery()
                 print(f"[NET-WATCHDOG] 🚀 Network restored after {downtime}s! (Mobile auto-reconnected). Restarting entire server stack...", flush=True)
                 restart_server_and_tunnel()
