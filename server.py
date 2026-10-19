@@ -1398,14 +1398,69 @@ def proxy_test_search():
 # PROXY ROUTE TO DEDICATED SOVEREIGN HYPERDATA DATABASE (PORT 3002)
 # =========================================================================
 
-import urllib3
+import http.client
+import queue
 
-_proxy_pool = urllib3.PoolManager(
-    maxsize=64,
-    num_pools=10,
-    headers={'User-Agent': 'NetuarkServerProxy/1.0'},
-    retries=urllib3.Retry(total=3, backoff_factor=0.05)
-)
+class LocalConnectionPool:
+    """Thread-safe zero-dependency HTTP/1.1 connection pool for 127.0.0.1:3002."""
+    def __init__(self, host='127.0.0.1', port=3002, max_conns=20):
+        self.host = host
+        self.port = port
+        self.pool = queue.Queue(maxsize=max_conns)
+        for _ in range(max_conns):
+            self.pool.put(None)
+
+    def get_conn(self):
+        try:
+            conn = self.pool.get_nowait()
+        except queue.Empty:
+            conn = http.client.HTTPConnection(self.host, self.port, timeout=15)
+        if conn is None:
+            conn = http.client.HTTPConnection(self.host, self.port, timeout=15)
+        return conn
+
+    def release_conn(self, conn, is_good=True):
+        if not is_good and conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            conn = None
+        try:
+            self.pool.put_nowait(conn)
+        except queue.Full:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+    def request(self, method, path, body=None, headers=None):
+        conn = self.get_conn()
+        is_good = True
+        try:
+            conn.request(method, path, body=body, headers=headers or {})
+            resp = conn.getresponse()
+            data = resp.read()
+            resp_headers = resp.getheaders()
+            return data, resp.status, resp_headers
+        except Exception:
+            is_good = False
+            # Auto-retry once with a fresh socket
+            try:
+                conn = http.client.HTTPConnection(self.host, self.port, timeout=15)
+                conn.request(method, path, body=body, headers=headers or {})
+                resp = conn.getresponse()
+                data = resp.read()
+                resp_headers = resp.getheaders()
+                is_good = True
+                return data, resp.status, resp_headers
+            except Exception as e:
+                raise e
+        finally:
+            self.release_conn(conn, is_good)
+
+_proxy_pool = LocalConnectionPool('127.0.0.1', 3002)
 
 _local_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -1423,14 +1478,15 @@ def proxy_hyperdata_root():
 def proxy_hyperdata_port_3002(subpath):
     if request.method == 'OPTIONS':
         return ('', 204)
-    target_url = f"http://127.0.0.1:3002/v1/hyperdata/{subpath}"
+    target_path = f"/v1/hyperdata/{subpath}"
     if request.query_string:
-        target_url += f"?{request.query_string.decode('utf-8')}"
+        target_path += f"?{request.query_string.decode('utf-8')}"
 
     headers = {k: v for k, v in request.headers if k.lower() not in ['host', 'content-length']}
     body = request.get_data() if request.method in ['POST', 'PUT', 'PATCH', 'DELETE'] else None
 
     if subpath == 'stream':
+        target_url = f"http://127.0.0.1:3002{target_path}"
         def generate():
             req = urllib.request.Request(target_url, data=body, headers=headers, method=request.method)
             try:
@@ -1449,15 +1505,14 @@ def proxy_hyperdata_port_3002(subpath):
         return res
 
     try:
-        resp = _proxy_pool.request(
+        data, status, resp_headers = _proxy_pool.request(
             request.method,
-            target_url,
+            target_path,
             body=body,
-            headers=headers,
-            timeout=urllib3.Timeout(connect=3.0, read=30.0)
+            headers=headers
         )
-        resp_headers = [(k, v) for k, v in resp.headers.items() if k.lower() not in ['content-length', 'transfer-encoding', 'connection']]
-        return resp.data, resp.status, resp_headers
+        filtered_headers = [(k, v) for k, v in resp_headers if k.lower() not in ['content-length', 'transfer-encoding', 'connection']]
+        return data, status, filtered_headers
     except Exception as e:
         return jsonify({"status": "error", "error": f"HyperData Service (Port 3002) unavailable: {str(e)}"}), 503
 

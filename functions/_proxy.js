@@ -137,6 +137,10 @@ export async function handleRequest(context) {
       proxyHeaders.delete("cf-ipcountry");
       proxyHeaders.delete("cf-visitor");
       try { proxyHeaders.set("Host", new URL(targetUrl).host); } catch (_) {}
+      if (isSseStream) {
+        proxyHeaders.set("Accept-Encoding", "identity");
+        proxyHeaders.set("Cache-Control", "no-cache");
+      }
 
       response = await fetch(new Request(targetUrl, {
         method: request.method,
