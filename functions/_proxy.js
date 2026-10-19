@@ -121,9 +121,11 @@ export async function handleRequest(context) {
   }
 
   const isStorageReq = url.pathname.startsWith("/v1/storage/objects/") || url.pathname.startsWith("/media/") || url.pathname.startsWith("/s/");
-  const maxAttempts = isStorageReq ? 1 : 2;
-  const timeoutMs = isStorageReq ? 6000 : 20000;
+  const isSseStream = url.pathname.startsWith("/v1/hyperdata/stream") || url.pathname.startsWith("/hyperdata/stream") || url.pathname.startsWith("/v1/db/stream") || request.headers.get("Accept") === "text/event-stream";
+  const maxAttempts = (isStorageReq || isSseStream) ? 1 : 2;
+  const timeoutMs = isStorageReq ? 6000 : (isSseStream ? 300000 : 20000);
 
+  let response = null;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const controller = new AbortController();
@@ -222,6 +224,12 @@ export async function handleRequest(context) {
 
   const respHeaders = new Headers(response.headers);
   Object.entries(CORS_HEADERS).forEach(([k, v]) => respHeaders.set(k, v));
+  if (isSseStream) {
+    respHeaders.set("Content-Type", "text/event-stream; charset=utf-8");
+    respHeaders.set("Cache-Control", "no-cache, no-transform");
+    respHeaders.set("Connection", "keep-alive");
+    respHeaders.set("X-Accel-Buffering", "no");
+  }
 
   return new Response(request.method === "HEAD" ? null : response.body, {
     status: response.status,
