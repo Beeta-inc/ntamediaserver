@@ -90,6 +90,8 @@ def docs():
             return f.read(), 200, {'Content-Type': 'text/html; charset=utf-8'}
     return "Docs not found", 404
 
+@app.route('/health')
+@app.route('/api/health')
 @app.route('/api/telemetry')
 @app.route('/telemetry')
 def get_telemetry_endpoint():
