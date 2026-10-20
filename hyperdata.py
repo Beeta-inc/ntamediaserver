@@ -645,14 +645,31 @@ class HyperDataEngine:
                 doc[f_name] = int(new_num) if new_num.is_integer() else new_num
             except Exception:
                 doc[f_name] = inc_by
-        elif action == "delete_field":
+        elif action in ["pull", "array_remove"]:
+            f_name = field or (list(patch_data.keys())[0] if isinstance(patch_data, dict) and patch_data else None)
+            val_to_remove = value if value is not None else (patch_data.get(f_name) if isinstance(patch_data, dict) else None)
+            if f_name and f_name in doc and isinstance(doc[f_name], list):
+                remove_items = val_to_remove if isinstance(val_to_remove, list) else [val_to_remove]
+                doc[f_name] = [item for item in doc[f_name] if item not in remove_items]
+        elif action in ["remove_dict_key", "delete_reaction"]:
+            dict_field = field or "reactions"
+            key_to_remove = value
+            if dict_field in doc and isinstance(doc[dict_field], dict) and key_to_remove in doc[dict_field]:
+                del doc[dict_field][key_to_remove]
+        elif action in ["delete_field"]:
             f_name = field or value
             if f_name and f_name in doc and f_name not in ["id", "_key"]:
                 del doc[f_name]
         else: # merge
             if isinstance(patch_data, dict):
                 for k, v in patch_data.items():
-                    if k not in ["id", "_key"]:
+                    if k in ["id", "_key"]:
+                        continue
+                    if isinstance(doc.get(k), dict) and isinstance(v, dict):
+                        doc[k].update(v)
+                    elif isinstance(doc.get(k), list) and isinstance(v, list):
+                        doc[k] = list(dict.fromkeys(doc[k] + v))
+                    else:
                         doc[k] = v
 
         res = self.set(safe_tenant, safe_table, safe_key, doc)
