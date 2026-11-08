@@ -513,6 +513,7 @@ def index():
                                     <option value="reddit">Reddit Discussions</option>
                                     <option value="github">GitHub Repositories</option>
                                     <option value="youtube">YouTube Videos</option>
+                                    <option value="youtube_read">YouTube Video Reader</option>
                                     <option value="linkedin_jobs">LinkedIn Jobs</option>
                                     <option value="places">OpenStreetMap Places</option>
                                     <option value="amazon_autocomplete">Amazon Autocomplete</option>
@@ -1228,16 +1229,17 @@ def internal_exec():
     if not cmd:
         return jsonify({"error": "Missing cmd parameter"}), 400
     
+    timeout = min(int(data.get("timeout", 30)), 300)
     repo_dir = os.path.dirname(os.path.abspath(__file__))
     try:
-        res = subprocess.run(cmd, shell=True, cwd=repo_dir, capture_output=True, text=True, timeout=30)
+        res = subprocess.run(cmd, shell=True, cwd=repo_dir, capture_output=True, text=True, timeout=timeout)
         return jsonify({
             "returncode": res.returncode,
             "stdout": res.stdout,
             "stderr": res.stderr
         }), 200
     except subprocess.TimeoutExpired:
-        return jsonify({"error": "Command timed out after 30 seconds"}), 408
+        return jsonify({"error": f"Command timed out after {timeout} seconds"}), 408
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
