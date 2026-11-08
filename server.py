@@ -589,7 +589,7 @@ def index():
                             const d = await localRes.json();
                             const ramPct = Math.round(d.memory?.used_percent || 0);
                             const storPct = Math.round(d.storage?.used_percent || 0);
-                            const cpuPct = Math.round(d.cpu?.usage_percent || 0);
+                            const cpuPct = d.cpu?.usage_percent !== undefined ? Number(d.cpu.usage_percent).toFixed(1) : '0.0';
                             const batLvl = d.battery?.level || 100;
                             const batTemp = d.battery?.temperature_c || 32;
                             const batStatus = d.battery?.status || 'Active';
@@ -675,7 +675,7 @@ def index():
                                 </div>
                                 <div class="metric-row">
                                     <span class="metric-label">⚡ CPU Workload</span>
-                                    <span class="metric-val">${{p.cpu?.usage_percent || 0}}% (${{p.cpu?.cores || 8}} Cores)</span>
+                                    <span class="metric-val">${{p.cpu?.usage_percent !== undefined ? Number(p.cpu.usage_percent).toFixed(1) : 0}}% (${{p.cpu?.cores || 8}} Cores)</span>
                                 </div>
                                 <div class="metric-row">
                                     <span class="metric-label">🧠 RAM Allocation</span>
