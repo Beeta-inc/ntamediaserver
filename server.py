@@ -507,9 +507,15 @@ def index():
                         <form id="searchTestForm" style="display:flex; flex-direction:column; gap:8px;">
                             <div style="display:flex; gap:8px;">
                                 <input type="text" id="testSearchQuery" placeholder="Enter query (e.g. quantum computing 2026)" class="form-control" style="font-size:12px; padding:8px 12px;" required />
-                                <select id="testSearchEngine" class="form-control" style="width:140px; font-size:11px; padding:8px;">
+                                <select id="testSearchEngine" class="form-control" style="width:160px; font-size:11px; padding:8px;">
                                     <option value="google">Google Web</option>
                                     <option value="google_images">Google Images</option>
+                                    <option value="reddit">Reddit Discussions</option>
+                                    <option value="github">GitHub Repositories</option>
+                                    <option value="youtube">YouTube Videos</option>
+                                    <option value="linkedin_jobs">LinkedIn Jobs</option>
+                                    <option value="places">OpenStreetMap Places</option>
+                                    <option value="amazon_autocomplete">Amazon Autocomplete</option>
                                     <option value="multi">Fast Multi-Engine</option>
                                 </select>
                             </div>
