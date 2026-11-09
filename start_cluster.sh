@@ -45,6 +45,24 @@ if [ -d "$HOME/ntamediaserver" ] && [ -d "/sdcard/Download/ntamediaserver" ]; th
     cp -f /sdcard/Download/ntamediaserver/*.sh "$HOME/ntamediaserver/" 2>/dev/null || true
 fi
 
+if [ -d "$HOME/ntawebsearchapi" ] && [ -d "/sdcard/Download/ntawebsearchapi" ]; then
+    echo "  [Sync] Synchronizing files from /sdcard/Download/ntawebsearchapi..."
+    cp -f /sdcard/Download/ntawebsearchapi/*.py "$HOME/ntawebsearchapi/" 2>/dev/null || true
+    cp -f /sdcard/Download/ntawebsearchapi/*.sh "$HOME/ntawebsearchapi/" 2>/dev/null || true
+fi
+
+# ⚡ Maximize 8-Core Hardware Performance & Uncap Frequencies
+echo "  [CPU] Uncapping all 8 CPU cores to maximum frequency & performance governor..."
+for cpu in /sys/devices/system/cpu/cpu[0-7]; do
+    echo 1 > "$cpu/online" 2>/dev/null || true
+    echo performance > "$cpu/cpufreq/scaling_governor" 2>/dev/null || true
+    max_f=$(cat "$cpu/cpufreq/cpuinfo_max_freq" 2>/dev/null || true)
+    if [ -n "$max_f" ]; then
+        echo "$max_f" > "$cpu/cpufreq/scaling_max_freq" 2>/dev/null || true
+        echo "$max_f" > "$cpu/cpufreq/scaling_min_freq" 2>/dev/null || true
+    fi
+done
+
 if [ -d "$HOME/ntawebsearchapi" ]; then
     SEARCH_DIR="$HOME/ntawebsearchapi"
 elif [ -d "/sdcard/Download/ntawebsearchapi" ]; then
